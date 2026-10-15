@@ -1,2 +1,8 @@
 allowBuilds:
-  '@scarf/scarf': set this to true or false
+  builds: true
+  '@scarf/scarf': false
+permissions:
+  '@scarf/scarf':
+    build: false
+  builds:
+    skills: true
