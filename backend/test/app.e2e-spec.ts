@@ -30,6 +30,27 @@ describe('AppController (e2e)', () => {
       .expect({ status: 'ok' });
   });
 
+  it('/metrics (GET) records request performance', async () => {
+    await request(app.getHttpServer()).get('/health').expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/metrics')
+      .expect(200)
+      .expect('Content-Type', /text\/plain/);
+
+    expect(res.text).toContain('http_requests_total{method="GET",route="/health",status_code="200"} 1');
+    expect(res.text).toContain('http_request_duration_seconds_bucket');
+    // The scrape endpoint itself is excluded so Prometheus traffic doesn't skew request stats
+    expect(res.text).not.toContain('route="/metrics"');
+  });
+
+  it('records 4xx responses with the route template, not the raw URL', async () => {
+    await request(app.getHttpServer()).get('/upload/image/not-a-number').expect(400);
+
+    const res = await request(app.getHttpServer()).get('/metrics').expect(200);
+    expect(res.text).toContain('route="/upload/image/:id",status_code="400"');
+  });
+
   afterEach(async () => {
     await app.close();
   });

@@ -20,7 +20,7 @@ export default function Gallery() {
 
   const fetchPhotos = async () => {
     try {
-      const response = await fetch('http://localhost:3001/upload/all');
+      const response = await fetch('/api/backend/upload/all');
       if (response.ok) {
         const data = await response.json();
         setPhotos(data);
@@ -48,7 +48,7 @@ export default function Gallery() {
               {/* 🌟 Directly point the src to your new NestJS raw binary streaming endpoint */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img 
-                src={`http://localhost:3001/upload/image/${item.id}`} 
+                src={`/api/backend/upload/image/${item.id}`}
                 alt={item.image_name}
                 style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }}
               />

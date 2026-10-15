@@ -1,0 +1,47 @@
+name: Monitoring CI
+
+on:
+  push:
+    paths:
+      - 'monitoring/**'
+      - 'compose.monitoring.yaml'
+      - '.github/workflows/monitoring-ci.yaml'
+  pull_request:
+    paths:
+      - 'monitoring/**'
+      - 'compose.monitoring.yaml'
+      - '.github/workflows/monitoring-ci.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check Prometheus config
+        run: >
+          docker run --rm -v "$PWD/monitoring/prometheus:/etc/prometheus:ro" --entrypoint promtool
+          prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+
+      - name: Test alert rules
+        run: >
+          docker run --rm -v "$PWD/monitoring/prometheus:/etc/prometheus:ro" -w /etc/prometheus --entrypoint promtool
+          prom/prometheus:v3.5.0 test rules alerts.test.yml
+
+      - name: Check Alertmanager config
+        run: >
+          docker run --rm -v "$PWD/monitoring/alertmanager:/etc/alertmanager:ro" --entrypoint amtool
+          prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml
+
+      - name: Check Grafana dashboard JSON
+        run: jq empty monitoring/grafana/dashboards/*.json
+
+      - name: Check compose files
+        run: docker compose -f compose.yaml -f compose.monitoring.yaml config --quiet
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-placeholder

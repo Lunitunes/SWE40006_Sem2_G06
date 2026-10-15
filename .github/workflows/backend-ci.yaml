@@ -11,6 +11,29 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # Real PostgreSQL for the upload E2E tests (throwaway, so the credentials don't need to be secret)
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_DB: photorepo_test
+          POSTGRES_USER: photorepo
+          POSTGRES_PASSWORD: photorepo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U photorepo -d photorepo_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: photorepo_test
+      DB_USER: photorepo
+      DB_PASSWORD: photorepo
+
     defaults:
       run:
         working-directory: backend

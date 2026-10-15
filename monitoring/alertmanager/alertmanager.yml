@@ -1,0 +1,24 @@
+route:
+  receiver: devops
+  group_by: ['alertname', 'job']
+  # Kept short so notifications go out within the 30-second alert target
+  group_wait: 5s
+  group_interval: 1m
+  repeat_interval: 4h
+
+receivers:
+  - name: devops
+    # No notification channel is configured yet; firing alerts are visible at http://localhost:9093.
+    # To notify the team, put a webhook URL in secrets/discord_webhook_url (the /secrets folder is
+    # gitignored) and uncomment:
+    # discord_configs:
+    #   - webhook_url_file: /etc/alertmanager/secrets/discord_webhook_url
+    #     send_resolved: true
+
+inhibit_rules:
+  # While a service is down, don't also page about its error rate or latency
+  - source_matchers: ['alertname = ServiceDown', 'job = backend']
+    target_matchers: ['alertname =~ HighHttpErrorRate|HighRequestLatency|DatabaseDown']
+  # A database outage causes the 5xx spike; alert on the cause, not the symptom
+  - source_matchers: ['alertname = DatabaseDown']
+    target_matchers: ['alertname = HighHttpErrorRate']

@@ -31,21 +31,25 @@ export default function UploadForm() {
     formData.append('description', description);
 
     try {
-      // Connects directly to your local NestJS backend
-      const response = await fetch('http://localhost:3001/upload', {
+      // Same-origin proxy to the NestJS backend (see app/api/backend/[...path]/route.ts)
+      const response = await fetch('/api/backend/upload', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success) {
         setStatus({ message: '🎉 Photo successfully saved directly to PostgreSQL!', type: 'success' });
         setPhoto(null);
         setDescription('');
         (e.target as HTMLFormElement).reset();
+      } else if (response.status === 413) {
+        setStatus({ message: 'That photo is too large. The limit is 10 MB.', type: 'error' });
       } else {
-        setStatus({ message: data.message || 'Something went wrong during upload.', type: 'error' });
+        // NestJS validation errors put the reason in `message` (a string, or a list of strings)
+        const message = Array.isArray(data.message) ? data.message.join(' ') : data.message;
+        setStatus({ message: message || 'Something went wrong during upload.', type: 'error' });
       }
     } catch (error) {
       setStatus({ message: 'Could not connect to the backend server.', type: 'error' });

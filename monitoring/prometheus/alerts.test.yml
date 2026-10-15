@@ -1,0 +1,115 @@
+# Run with: promtool test rules monitoring/prometheus/alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 5s
+
+tests:
+  # Backend stops responding: alert fires on the first failed scrape, with no pending period
+  - interval: 15s
+    input_series:
+      - series: 'up{job="backend", instance="backend:3001"}'
+        values: '1 0 0'
+    alert_rule_test:
+      - eval_time: 10s
+        alertname: ServiceDown
+        exp_alerts: []
+      - eval_time: 15s
+        alertname: ServiceDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: backend
+              instance: backend:3001
+            exp_annotations:
+              summary: 'backend is down'
+              description: 'Prometheus cannot scrape backend:3001 (job backend). For the backend this means /metrics and /health are not responding.'
+
+  # Backend stays up but loses the database: DatabaseDown fires on the first failed check
+  - interval: 15s
+    input_series:
+      - series: 'database_up{job="backend", instance="backend:3001"}'
+        values: '1 0'
+    alert_rule_test:
+      - eval_time: 10s
+        alertname: DatabaseDown
+        exp_alerts: []
+      - eval_time: 15s
+        alertname: DatabaseDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: backend
+              instance: backend:3001
+            exp_annotations:
+              summary: 'Backend cannot reach the database'
+              description: 'PostgreSQL is unreachable from the backend, so photo uploads and the gallery are failing.'
+
+  # ~2% of traffic is 5xx over 5 minutes: above the 1% threshold
+  - interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="backend", method="GET", route="/upload/all", status_code="200"}'
+        values: '0+100x40'
+      - series: 'http_requests_total{job="backend", method="POST", route="/upload", status_code="500"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: HighHttpErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: 'Backend 5xx error rate is 1.961%'
+              description: 'More than 1% of backend requests returned a 5xx status over the last 5 minutes.'
+
+  # ~0.5% of traffic is 5xx: below the threshold, so no alert
+  - interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="backend", method="GET", route="/upload/all", status_code="200"}'
+        values: '0+200x40'
+      - series: 'http_requests_total{job="backend", method="POST", route="/upload", status_code="500"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: HighHttpErrorRate
+        exp_alerts: []
+
+  # Disk alerts step down in 5% increments; at 10% or less they become critical
+  - interval: 15s
+    input_series:
+      - series: 'node_filesystem_size_bytes{job="node", instance="node-exporter:9100", device="/dev/root", fstype="ext4", mountpoint="/"}'
+        values: '100 100 100'
+      - series: 'node_filesystem_avail_bytes{job="node", instance="node-exporter:9100", device="/dev/root", fstype="ext4", mountpoint="/"}'
+        values: '30 17 8'
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: DiskSpaceLow
+        exp_alerts: []
+      - eval_time: 15s
+        alertname: DiskSpaceLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              free_space_below: 20%
+              job: node
+              instance: node-exporter:9100
+              device: /dev/root
+              fstype: ext4
+              mountpoint: /
+            exp_annotations:
+              summary: 'Disk / has less than 20% free space'
+              description: 'Free photo storage is running out on / (/dev/root).'
+      - eval_time: 30s
+        alertname: DiskSpaceLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              free_space_below: 10%
+              job: node
+              instance: node-exporter:9100
+              device: /dev/root
+              fstype: ext4
+              mountpoint: /
+            exp_annotations:
+              summary: 'Disk / has less than 10% free space'
+              description: 'Free photo storage is running out on / (/dev/root).'

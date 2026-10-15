@@ -1,0 +1,82 @@
+# Deliberately short list of actionable alerts (success metric: >99% actionable, no alert fatigue).
+groups:
+  # Evaluated every 5s so an outage reaches Alertmanager within the 30s target:
+  #   worst case = 15s scrape interval + 5s scrape timeout + 5s rule evaluation + 5s Alertmanager group_wait = 30s
+  - name: availability
+    interval: 5s
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} is down'
+          description: 'Prometheus cannot scrape {{ $labels.instance }} (job {{ $labels.job }}). For the backend this means /metrics and /health are not responding.'
+
+      # The backend can be up while uploads fail because PostgreSQL is unreachable
+      - alert: DatabaseDown
+        expr: database_up == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Backend cannot reach the database'
+          description: 'PostgreSQL is unreachable from the backend, so photo uploads and the gallery are failing.'
+
+  - name: application
+    rules:
+      # HTTP 500s above 1% of total traffic over a rolling five-minute window
+      - alert: HighHttpErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="backend", status_code=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="backend"}[5m])) > 0.01
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Backend 5xx error rate is {{ $value | humanizePercentage }}'
+          description: 'More than 1% of backend requests returned a 5xx status over the last 5 minutes.'
+
+      - alert: HighRequestLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="backend"}[5m]))) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Backend p95 latency is {{ $value | humanizeDuration }}'
+          description: '95th percentile request latency has been above 1 second for 5 minutes.'
+
+  - name: host
+    rules:
+      # Depleting storage at 5% increments: the expression is free space rounded up to the next 5%,
+      # and that value becomes a label, so each new step (20%, 15%, 10%, 5%) fires a fresh notification.
+      - alert: DiskSpaceLow
+        expr: |
+          ceil(
+            100 * node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+              / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+            / 5
+          ) * 5 <= 20
+        labels:
+          free_space_below: '{{ $value }}%'
+          severity: '{{ if le $value 10.0 }}critical{{ else }}warning{{ end }}'
+        annotations:
+          summary: 'Disk {{ $labels.mountpoint }} has less than {{ $value }}% free space'
+          description: 'Free photo storage is running out on {{ $labels.mountpoint }} ({{ $labels.device }}).'
+
+      - alert: HighCpuUsage
+        expr: 100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))) > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Host CPU usage is {{ $value | printf "%.0f" }}%'
+          description: 'CPU usage has been above 90% for 5 minutes.'
+
+      - alert: HighMemoryUsage
+        expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Host memory usage is {{ $value | printf "%.0f" }}%'
+          description: 'Memory usage has been above 90% for 5 minutes.'
