@@ -1,5 +1,6 @@
 allowBuilds:
   builds: true
+  '@scarf/scarf': false
 permissions:
   '@scarf/scarf':
     build: false
