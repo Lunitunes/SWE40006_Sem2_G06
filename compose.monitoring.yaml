@@ -26,7 +26,7 @@ services:
     volumes:
       - ./monitoring/alertmanager:/etc/alertmanager:ro
       - alertmanager-data:/alertmanager
-      # Discord webhook URL (secrets/discord_webhook_url); /secrets is gitignored. Mounted outside
+      # Discord webhook URL (secrets/discord_webhook_url, committed; see .gitignore). Mounted outside
       # /etc/alertmanager because that's a read-only mount, so Docker can't create a folder inside it
       - ./secrets:/etc/alertmanager-secrets:ro
     ports:

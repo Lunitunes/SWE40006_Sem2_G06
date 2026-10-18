@@ -1,3 +1,7 @@
 .env
-/secrets
+# Secrets stay out of git, except the Discord alert webhook: committed deliberately (private repo)
+# so every deployment, including EC2, sends alerts without extra setup. Regenerate it in Discord
+# if the repo is ever made public.
+/secrets/*
+!/secrets/discord_webhook_url
 .vscode/extensions.json

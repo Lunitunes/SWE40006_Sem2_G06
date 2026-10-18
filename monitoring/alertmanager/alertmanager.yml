@@ -8,8 +8,8 @@ route:
 
 receivers:
   - name: devops
-    # Sends alerts to the team's Discord channel. The webhook URL is a secret, so it lives in
-    # secrets/discord_webhook_url (the /secrets folder is gitignored), mounted into the container.
+    # Sends alerts to the team's Discord channel. The webhook URL lives in secrets/discord_webhook_url
+    # (committed deliberately, private repo; see .gitignore), mounted into the container.
     # See monitoring/README.md for how to create the webhook.
     discord_configs:
       - webhook_url_file: /etc/alertmanager-secrets/discord_webhook_url

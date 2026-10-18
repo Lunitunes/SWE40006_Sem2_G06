@@ -45,23 +45,26 @@ The alert rules are unit tested in `prometheus/alerts.test.yml`. The `Monitoring
 
 ## Sending alerts to the team
 
-Alerts go to a Discord channel, firing and resolved, as messages like "🔴 ServiceDown" and "✅ Resolved: ServiceDown". Each machine running the stack needs the webhook URL once:
+Alerts go to the team's Discord channel, firing and resolved, as messages like "🔴 ServiceDown" and "✅ Resolved: ServiceDown".
 
-1. **Create the webhook** in Discord: open the channel's settings, choose **Integrations → Webhooks → New Webhook**, then **Copy Webhook URL**. You need the Manage Webhooks permission on the server.
-2. **Save the URL** as the only content of `secrets/discord_webhook_url` at the repo root:
-   ```powershell
-   Set-Content -NoNewline secrets\discord_webhook_url 'https://discord.com/api/webhooks/…'   # Windows
-   ```
-   ```sh
-   printf '%s' 'https://discord.com/api/webhooks/…' > secrets/discord_webhook_url             # Linux / EC2
-   ```
-   The `/secrets` folder is gitignored, so the URL is never committed. Anyone who has the URL can post to the channel.
-3. **Send a test alert** to check it works. Alertmanager reads the file each time it sends, so no restart is needed:
+**It's already set up.** The webhook URL is committed in `secrets/discord_webhook_url`, so every machine that pulls the repo, including EC2, sends alerts with no extra steps. This was done deliberately because the repo is private. Anyone who can read the repo can post to the channel, so if the repo is ever made public, regenerate the webhook first.
+
+**Changing the webhook** (to move channels, or after regenerating it): in Discord, open the channel's settings, choose **Integrations → Webhooks**, then **Copy Webhook URL**. Make the URL the only content of `secrets/discord_webhook_url`, with no newline, then commit it:
+
+```powershell
+Set-Content -NoNewline secrets\discord_webhook_url 'https://discord.com/api/webhooks/…'   # Windows
+```
+
+```sh
+printf '%s' 'https://discord.com/api/webhooks/…' > secrets/discord_webhook_url             # Linux / EC2
+```
+
+**Send a test alert** to check it works. Alertmanager reads the file each time it sends, so no restart is needed:
    ```sh
    docker compose exec alertmanager sh -c "amtool alert add PhotoRepoTestAlert severity=info --annotation='summary=\"Test alert from Photo Repo\"' --annotation='description=\"If you can read this, Discord alerts are working.\"' --alertmanager.url=http://localhost:9093"
    ```
    The message should arrive within about 10 seconds.
 
-Until the file exists, alerts still fire and show in Alertmanager and on the dashboards; Alertmanager just logs that it couldn't send them.
+If the file is missing or the webhook has been deleted in Discord, alerts still fire and show in Alertmanager and on the dashboards; Alertmanager just logs that it couldn't send them.
 
 **Measured:** with the backend stopped, the `ServiceDown` message reached a webhook 17.9 s later, within the 30 s target. The "Resolved" message followed once the backend restarted. The test used a stand-in webhook server on the Docker network in place of Discord.
