@@ -253,6 +253,8 @@ One-time setup:
    - `PUBLIC_URL` = `https://13-239-43-240.sslip.io` (the address in the QR codes)
 4. Run the **Deployment** workflow. The log should end with `HTTPS ok: https://13-239-43-240.sslip.io`.
 
+**Grafana on EC2** is at `https://grafana.13-239-43-240.sslip.io`, and the navbar's Grafana link goes there. The deploy derives that address from `SITE_ADDRESS`, and Caddy gets it a certificate too. Plain `http://<host>:3002` doesn't work once the site is on HTTPS: the site's HSTS header makes browsers upgrade every port on that hostname to HTTPS (`SSL_ERROR_RX_RECORD_TOO_LONG`). Port 3002 can then be closed in the security group.
+
 While `SITE_ADDRESS` is unset, Caddy serves plain HTTP on port 80, so a deploy never takes the site down before HTTPS is configured. The certificate is stored in the `caddy-data` volume, so redeploys don't request a new one.
 
 Tested locally: Caddy in front of the stack (with a self-signed certificate for `localhost`) served every page, redirected HTTP to HTTPS, set HSTS, issued a `Secure` login cookie, passed a 41 s slow upload, and passed the full Playwright suite over HTTPS, including the in-page camera tests.

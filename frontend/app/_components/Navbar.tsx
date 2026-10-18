@@ -12,10 +12,16 @@ const APP_LINKS = [
   { href: '/admin/metrics', label: 'Metrics' },
 ];
 
-// Grafana runs on the same server, port 3002, behind its own login. Only shown to logged-in hosts,
-// since guests see this bar. Prometheus and Alertmanager stay unlinked: they're only reachable
-// from the server itself (see the README).
-const GRAFANA_PORT = 3002;
+// Grafana runs on the same server behind its own login. Only shown to logged-in hosts, since guests
+// see this bar. Prometheus and Alertmanager stay unlinked: they're only reachable from the server
+// itself (see the README).
+//   HTTPS (EC2): https://grafana.<host>, served by Caddy. Plain http://<host>:3002 can't work there,
+//                because the site's HSTS header makes browsers upgrade every port to HTTPS.
+//   HTTP (local): http://<host>:3002
+function grafanaUrl(): string {
+  const { protocol, hostname } = window.location;
+  return protocol === 'https:' ? `https://grafana.${hostname}` : `http://${hostname}:3002`;
+}
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -40,7 +46,7 @@ export default function Navbar() {
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const close = () => setOpen(false);
   // isHost is only ever true in the browser, so window is safe to use here
-  const grafanaUrl = isHost ? `http://${window.location.hostname}:${GRAFANA_PORT}` : null;
+  const grafanaLink = isHost ? grafanaUrl() : null;
 
   return (
     <header className={styles.bar}>
@@ -76,9 +82,9 @@ export default function Navbar() {
                 </Link>
               </li>
             ))}
-            {grafanaUrl && (
+            {grafanaLink && (
               <li>
-                <a href={grafanaUrl} className={styles.link} target="_blank" rel="noopener noreferrer" onClick={close}>
+                <a href={grafanaLink} className={styles.link} target="_blank" rel="noopener noreferrer" onClick={close}>
                   Grafana
                   <span className={styles.external} aria-hidden>
                     ↗

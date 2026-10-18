@@ -113,7 +113,10 @@ test('the navbar shows Grafana to logged-in hosts only', async ({ page, baseURL,
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page.getByRole('heading', { name: 'Your events' })).toBeVisible();
   await expect(grafana).toBeVisible();
-  await expect(grafana).toHaveAttribute('href', `http://${new URL(baseURL!).hostname}:3002`);
+  // HTTPS sites (EC2) use Grafana's HTTPS subdomain; HSTS rules out plain http://<host>:3002 there
+  const site = new URL(baseURL!);
+  const expectedGrafana = site.protocol === 'https:' ? `https://grafana.${site.hostname}` : `http://${site.hostname}:3002`;
+  await expect(grafana).toHaveAttribute('href', expectedGrafana);
   await expect(grafana).toHaveAttribute('target', '_blank');
 
   await page.getByRole('button', { name: 'Log out' }).click();

@@ -95,6 +95,11 @@ jobs:
             printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"
             printf 'PUBLIC_URL=%s\n' "$PUBLIC_URL"
             printf 'SITE_ADDRESS=%s\n' "$SITE_ADDRESS"
+            # Grafana over HTTPS on a subdomain of the site (sslip.io resolves any subdomain)
+            if [ -n "$SITE_ADDRESS" ]; then
+              printf 'GRAFANA_ADDRESS=grafana.%s\n' "$SITE_ADDRESS"
+              printf 'GRAFANA_ROOT_URL=https://grafana.%s\n' "$SITE_ADDRESS"
+            fi
           } > .env
 
       - name: Transfer deployment files

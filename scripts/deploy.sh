@@ -80,6 +80,10 @@ if healthy; then
     done || true
     curl -fsS -o /dev/null --max-time 10 "https://$site/" ||
       log "WARNING: https://$site is not answering yet; check inbound ports 80/443 and 'docker logs photo-repo-caddy-1'"
+    # Grafana's /api/health needs no login
+    curl -fsS -o /dev/null --max-time 10 "https://grafana.$site/api/health" &&
+      log "HTTPS ok: https://grafana.$site" ||
+      log "WARNING: https://grafana.$site is not answering yet (its certificate may still be issuing)"
   fi
   exit 0
 fi

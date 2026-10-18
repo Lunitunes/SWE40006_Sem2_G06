@@ -14,6 +14,17 @@
 	# X-Forwarded-Proto: https, so the backend marks the host login cookie Secure.
 	reverse_proxy frontend:3000
 
-	# Browsers remember to use HTTPS for this site from now on
+	# Browsers remember to use HTTPS for this site from now on. Note this applies to every port on
+	# the hostname, which is why Grafana is served over HTTPS below rather than on plain :3002
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+# Grafana over HTTPS on its own subdomain, e.g. grafana.13-239-43-240.sslip.io (sslip.io resolves
+# any subdomain to the same IP). With HSTS on the main hostname, browsers refuse plain-HTTP Grafana
+# at <hostname>:3002, so this is how hosts reach it. Grafana keeps its own login.
+# The default (when GRAFANA_ADDRESS is unset) only matches a name nobody can reach: effectively off.
+{$GRAFANA_ADDRESS:http://grafana.localhost} {
+	encode zstd gzip
+	reverse_proxy grafana:3000
 	header Strict-Transport-Security "max-age=31536000"
 }

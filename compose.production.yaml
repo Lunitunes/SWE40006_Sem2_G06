@@ -38,6 +38,9 @@ services:
     environment:
       # e.g. 13-239-43-240.sslip.io; blank = plain HTTP on port 80, no certificate
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # Grafana over HTTPS, e.g. grafana.13-239-43-240.sslip.io (deploy.yaml derives it from
+      # SITE_ADDRESS); blank = not served through Caddy
+      GRAFANA_ADDRESS: ${GRAFANA_ADDRESS:-http://grafana.localhost}
     ports:
       - "80:80"
       - "443:443"
