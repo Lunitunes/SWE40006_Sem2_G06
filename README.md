@@ -60,7 +60,7 @@ On Docker Desktop, the host CPU, memory, disk and network figures come from Dock
 | Alertmanager | <http://localhost:9093>, no login |
 | Backend readiness | <http://localhost:3001/health/ready> |
 
-Prometheus and Alertmanager have no authentication, so they only accept connections from the machine they run on. On EC2, reach them through an SSH tunnel: `ssh -L 9090:localhost:9090 -L 9093:localhost:9093 <server>`. Grafana is the only tool with a login. These ops tools are deliberately left out of the app's navbar, which guests see.
+Prometheus and Alertmanager have no authentication, so they only accept connections from the machine they run on. On EC2, reach them through an SSH tunnel: `ssh -L 9090:localhost:9090 -L 9093:localhost:9093 <server>`. Grafana is the only tool with a login. The app's navbar links to Grafana only for logged-in hosts, since guests see the navbar too; Prometheus and Alertmanager aren't linked at all.
 
 ### Stopping
 

@@ -95,6 +95,31 @@ test.describe('Host dashboard', () => {
   });
 });
 
+test('the navbar shows Grafana to logged-in hosts only', async ({ page, baseURL, isMobile }) => {
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  const grafana = nav.getByRole('link', { name: /Grafana/ });
+  // On phones the links sit behind the Menu button
+  const openMenu = async () => {
+    if (isMobile) await nav.getByRole('button', { name: 'Menu' }).click();
+  };
+
+  await page.goto('/host');
+  await openMenu();
+  await expect(nav.getByRole('link', { name: 'Events' })).toBeVisible();
+  await expect(grafana).toHaveCount(0);
+
+  // Appears straight after logging in, without a page reload
+  await page.getByLabel('Password').fill(process.env.E2E_ADMIN_PASSWORD ?? '');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByRole('heading', { name: 'Your events' })).toBeVisible();
+  await expect(grafana).toBeVisible();
+  await expect(grafana).toHaveAttribute('href', `http://${new URL(baseURL!).hostname}:3002`);
+  await expect(grafana).toHaveAttribute('target', '_blank');
+
+  await page.getByRole('button', { name: 'Log out' }).click();
+  await expect(grafana).toHaveCount(0);
+});
+
 test.describe('Metrics page', () => {
   test('is only available to hosts', async ({ page }) => {
     await page.goto('/admin/metrics');

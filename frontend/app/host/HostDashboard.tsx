@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import ShareQr from '../_components/ShareQr';
+import { announceHostSessionChanged } from '../_components/hostSession';
 import styles from '../_components/ui.module.css';
 
 type EventSummary = {
@@ -252,6 +253,7 @@ export default function HostDashboard({ publicUrl }: { publicUrl: string | null 
   const sessionExpired = () => {
     setEvents(null);
     setAuth('out');
+    announceHostSessionChanged();
   };
 
   const create = async (e: FormEvent) => {
@@ -280,7 +282,12 @@ export default function HostDashboard({ publicUrl }: { publicUrl: string | null 
       <>
         <h1 className={styles.title}>Host dashboard</h1>
         <p className={styles.lead}>Log in to create events and get a QR code for your guests.</p>
-        <LoginForm onLoggedIn={() => setReloadKey((k) => k + 1)} />
+        <LoginForm
+          onLoggedIn={() => {
+            setReloadKey((k) => k + 1);
+            announceHostSessionChanged();
+          }}
+        />
       </>
     );
   }
