@@ -3,7 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
-import { MAX_UPLOAD_BYTES } from './../src/events/share.controller.js';
+import { MAX_THUMBNAIL_BYTES, MAX_UPLOAD_BYTES } from './../src/events/share.controller.js';
 
 // 1x1 transparent PNG
 const PNG = Buffer.from(
@@ -230,6 +230,45 @@ describe('Events, host login and guest uploads (e2e)', () => {
           .field('description', 'huge')
           .attach('photo', Buffer.concat([PNG, Buffer.alloc(MAX_UPLOAD_BYTES)]), { filename: 'huge.png', contentType: 'image/png' })
           .expect(413);
+      });
+
+      describe('thumbnails', () => {
+        // Distinct bytes (data after a PNG's end marker is ignored by decoders), so we can tell which came back
+        const THUMB = Buffer.concat([PNG, Buffer.from('thumbnail')]);
+        const image = (id: number, query = '') =>
+          request(app.getHttpServer()).get(`/events/share/${token}/photos/${id}/image${query}`).expect(200);
+
+        it('stores a thumbnail and serves it with ?size=thumb, keeping the full image separate', async () => {
+          const res = await upload()
+            .field('description', 'with thumbnail')
+            .attach('photo', PNG, { filename: 'p.png', contentType: 'image/png' })
+            .attach('thumbnail', THUMB, { filename: 'thumb.png', contentType: 'image/png' })
+            .expect(201);
+
+          expect(Buffer.compare((await image(res.body.id, '?size=thumb')).body, THUMB)).toBe(0);
+          expect(Buffer.compare((await image(res.body.id)).body, PNG)).toBe(0);
+        });
+
+        it('falls back to the full image when a photo has no thumbnail', async () => {
+          const res = await upload().field('description', 'no thumbnail').attach('photo', PNG, { filename: 'p.png', contentType: 'image/png' }).expect(201);
+          expect(Buffer.compare((await image(res.body.id, '?size=thumb')).body, PNG)).toBe(0);
+        });
+
+        it('rejects a thumbnail that is not an image', () => {
+          return upload()
+            .field('description', 'bad thumbnail')
+            .attach('photo', PNG, { filename: 'p.png', contentType: 'image/png' })
+            .attach('thumbnail', Buffer.from('<svg onload=alert(1)>'), { filename: 't.png', contentType: 'image/png' })
+            .expect(400);
+        });
+
+        it('rejects a thumbnail over 512 KB', () => {
+          return upload()
+            .field('description', 'huge thumbnail')
+            .attach('photo', PNG, { filename: 'p.png', contentType: 'image/png' })
+            .attach('thumbnail', Buffer.concat([PNG, Buffer.alloc(MAX_THUMBNAIL_BYTES)]), { filename: 't.png', contentType: 'image/png' })
+            .expect(400);
+        });
       });
 
       it('rejects uploads to an event that does not exist', () => {

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import CameraView from './CameraView';
+import { preparePhoto } from './preparePhoto';
 import styles from '../ui.module.css';
 
-// Same limits the backend enforces; checked here too so guests get instant feedback
+// Same limits the backend enforces; checked here too (after resizing) so guests get instant feedback
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_DESCRIPTION = 500;
 
@@ -20,6 +21,10 @@ export default function UploadForm({ token, onUploaded }: { token: string; onUpl
   const [step, setStep] = useState<Step>('choose');
   const [source, setSource] = useState<Source>('device');
   const [file, setFile] = useState<File | null>(null);
+  const [thumbnail, setThumbnail] = useState<Blob | null>(null);
+  // Set when the photo was shrunk before upload: shown to the guest as "6.1 MB → 0.8 MB"
+  const [resizedFrom, setResizedFrom] = useState<number | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [description, setDescription] = useState('');
@@ -29,6 +34,8 @@ export default function UploadForm({ token, onUploaded }: { token: string; onUpl
   const deviceInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  // Ignores a slow resize that finishes after the guest has already picked another photo
+  const prepareRun = useRef(0);
 
   // Release the preview image's memory when it's replaced or the form unmounts
   useEffect(() => {
@@ -41,24 +48,36 @@ export default function UploadForm({ token, onUploaded }: { token: string; onUpl
     if (step === 'preview') descriptionRef.current?.focus();
   }, [step]);
 
-  const showPreview = (chosen: File, from: Source) => {
+  const showPreview = async (chosen: File, from: Source) => {
     if (chosen.type && !chosen.type.startsWith('image/')) {
       setError('That file isn’t an image. Choose a photo instead.');
       return;
     }
-    if (chosen.size > MAX_BYTES) {
-      setError(`That photo is ${formatMb(chosen.size)}. The limit is 10 MB.`);
+    setError(null);
+    setPreparing(true);
+    const run = ++prepareRun.current;
+
+    // Shrink big photos and make the gallery thumbnail before the guest even sees the preview, so
+    // the preview shows exactly what will be uploaded
+    const prepared = await preparePhoto(chosen);
+    if (run !== prepareRun.current) return;
+    setPreparing(false);
+
+    // Checked after resizing: a 15 MB phone photo usually ends up well under the limit
+    if (prepared.photo.size > MAX_BYTES) {
+      setError(`That photo is ${formatMb(prepared.photo.size)}. The limit is 10 MB.`);
       return;
     }
-    setError(null);
-    setFile(chosen);
+    setFile(prepared.photo);
+    setThumbnail(prepared.thumbnail);
+    setResizedFrom(prepared.resized ? prepared.originalBytes : null);
     setSource(from);
     setPreviewFailed(false);
-    setPreviewUrl(URL.createObjectURL(chosen));
+    setPreviewUrl(URL.createObjectURL(prepared.photo));
     setStep('preview');
   };
 
-  const onFileChosen = (from: Source) => (e: ChangeEvent<HTMLInputElement>) => {
+  const onFileChosen = (e: ChangeEvent<HTMLInputElement>, from: Source) => {
     const chosen = e.target.files?.[0];
     e.target.value = ''; // so choosing the same file again still fires a change
     if (chosen) showPreview(chosen, from);
@@ -82,6 +101,8 @@ export default function UploadForm({ token, onUploaded }: { token: string; onUpl
   const reset = () => {
     setStep('choose');
     setFile(null);
+    setThumbnail(null);
+    setResizedFrom(null);
     setPreviewUrl(null);
     setDescription('');
     setError(null);
@@ -101,6 +122,8 @@ export default function UploadForm({ token, onUploaded }: { token: string; onUpl
     setError(null);
     const formData = new FormData();
     formData.append('photo', file);
+    // The gallery shows this instead of downloading every full-size photo
+    if (thumbnail) formData.append('thumbnail', thumbnail, 'thumbnail.jpg');
     formData.append('description', text);
 
     try {
@@ -139,37 +162,43 @@ export default function UploadForm({ token, onUploaded }: { token: string; onUpl
       </h2>
 
       {/* Hidden inputs: one opens the file picker, the other asks phones to open the camera app */}
-      <input ref={deviceInputRef} type="file" accept="image/*" className={styles.hiddenInput} onChange={onFileChosen('device')} />
+      <input ref={deviceInputRef} type="file" accept="image/*" className={styles.hiddenInput} onChange={(e) => onFileChosen(e, 'device')} />
       <input
         ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
         className={styles.hiddenInput}
-        onChange={onFileChosen('camera')}
+        onChange={(e) => onFileChosen(e, 'camera')}
       />
 
       {step === 'choose' && (
         <div className={styles.choices}>
-          <button type="button" className={styles.choice} onClick={takePhoto}>
+          <button type="button" className={styles.choice} onClick={takePhoto} disabled={preparing}>
             <span className={styles.choiceIcon} aria-hidden>
               📷
             </span>
             <span className={styles.choiceLabel}>Take a photo</span>
             <span className={styles.choiceHint}>Use your camera</span>
           </button>
-          <button type="button" className={styles.choice} onClick={() => deviceInputRef.current?.click()}>
+          <button type="button" className={styles.choice} onClick={() => deviceInputRef.current?.click()} disabled={preparing}>
             <span className={styles.choiceIcon} aria-hidden>
               🖼️
             </span>
             <span className={styles.choiceLabel}>Choose a photo</span>
-            <span className={styles.choiceHint}>From your device · up to 10 MB</span>
+            <span className={styles.choiceHint}>From your device</span>
           </button>
         </div>
       )}
 
       {step === 'camera' && (
         <CameraView onCapture={(captured) => showPreview(captured, 'camera')} onCancel={() => setStep('choose')} />
+      )}
+
+      {preparing && (
+        <p className={styles.hint} role="status">
+          Preparing your photo…
+        </p>
       )}
 
       {step === 'preview' && previewUrl && (
@@ -184,6 +213,11 @@ export default function UploadForm({ token, onUploaded }: { token: string; onUpl
               <img src={previewUrl} alt="Preview of the photo you’re about to upload" onError={() => setPreviewFailed(true)} />
             )}
           </div>
+          {resizedFrom !== null && file && (
+            <p className={styles.hint}>
+              Resized for a faster upload: {formatMb(resizedFrom)} → {formatMb(file.size)}
+            </p>
+          )}
 
           <label htmlFor="description" className={styles.label}>
             Description

@@ -92,9 +92,11 @@ export default function Gallery({ token, refreshKey = 0, canDelete = false }: Pr
         <ul className={styles.grid}>
           {photos.map((item) => (
             <li key={item.id} className={styles.photo}>
-              {/* Served by the backend through the same-origin proxy */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`${base}/${item.id}/image`} alt={item.description} loading="lazy" />
+              {/* The gallery loads small thumbnails (~40 KB); tapping opens the full photo */}
+              <a href={`${base}/${item.id}/image`} target="_blank" rel="noopener" className={styles.photoLink}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- served by the backend via the proxy */}
+                <img src={`${base}/${item.id}/image?size=thumb`} alt={item.description} loading="lazy" />
+              </a>
               <div className={styles.photoBody}>
                 <p className={styles.photoCaption}>{item.description}</p>
                 <p className={styles.photoMeta}>{dateFormat.format(new Date(item.uploaded_at))}</p>

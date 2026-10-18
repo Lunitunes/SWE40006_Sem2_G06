@@ -115,7 +115,68 @@ test.describe('Guest journey', () => {
     await expect(page.getByText('No photos yet')).toBeVisible();
   });
 
-  test('rejects photos over 10 MB before uploading', async ({ page }) => {
+  test('shrinks a big phone photo before upload, strips its GPS data, and the gallery shows a thumbnail', async ({ page }) => {
+    await page.goto(`/e/${event.token}`);
+
+    // A 20-megapixel photo (5000x4000) over 10 MB, like a modern phone's, made in the browser.
+    // Random noise doesn't compress, so the file is really that big.
+    const generated = await page.evaluate(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 5000;
+      canvas.height = 4000;
+      const ctx = canvas.getContext('2d')!;
+      const pixels = ctx.createImageData(canvas.width, canvas.height);
+      const noise = new Uint32Array(pixels.data.buffer);
+      for (let i = 0; i < noise.length; i++) noise[i] = (Math.random() * 0xffffffff) | 0xff000000;
+      ctx.putImageData(pixels, 0, 0);
+      const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.95));
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(binary);
+    });
+    const encoded = Buffer.from(generated, 'base64');
+    // Insert an EXIF block with a GPS position right after the JPEG start marker, as phones do
+    const exifBody = Buffer.from('Exif\0\0GPSLatitude -37.8221 GPSLongitude 145.0389');
+    const exif = Buffer.concat([Buffer.from([0xff, 0xe1, (exifBody.length + 2) >> 8, (exifBody.length + 2) & 0xff]), exifBody]);
+    const original = Buffer.concat([encoded.subarray(0, 2), exif, encoded.subarray(2)]);
+    expect(original.length, 'test photo should be over the 10 MB upload limit').toBeGreaterThan(10 * 1024 * 1024);
+
+    await choosePhoto(page, { name: 'IMG_0001.jpg', mimeType: 'image/jpeg', buffer: original });
+
+    // Previously rejected for being over 10 MB; now resized in the browser first
+    await expect(page.getByText(/^Resized for a faster upload: \d+\.\d MB → \d+\.\d MB$/)).toBeVisible({ timeout: 20_000 });
+    await page.getByLabel('Description').fill('Big phone photo');
+    await page.getByRole('button', { name: 'Looks good, upload' }).click();
+    await expect(page.getByRole('heading', { name: 'Photo uploaded' })).toBeVisible({ timeout: 30_000 });
+
+    // What the server stored: at most 2560px, same 5:4 shape, well under the limit, no GPS data
+    const [photo] = await (await page.request.get(`/api/backend/events/share/${event.token}/photos`)).json();
+    const full = await page.request.get(`/api/backend/events/share/${event.token}/photos/${photo.id}/image`);
+    const fullBytes = await full.body();
+    expect(full.headers()['content-type']).toBe('image/jpeg');
+    expect(fullBytes.length).toBeLessThan(original.length / 2);
+    expect(fullBytes.includes(Buffer.from('GPSLatitude'))).toBe(false);
+
+    const size = (url: string) =>
+      page.evaluate(async (u) => {
+        const bitmap = await createImageBitmap(await (await fetch(u)).blob());
+        return { width: bitmap.width, height: bitmap.height };
+      }, url);
+    expect(await size(`/api/backend/events/share/${event.token}/photos/${photo.id}/image`)).toEqual({ width: 2560, height: 2048 });
+
+    // The gallery downloads only the small thumbnail
+    const thumbUrl = `/api/backend/events/share/${event.token}/photos/${photo.id}/image?size=thumb`;
+    await expect(page.getByRole('region', { name: 'Gallery' }).getByRole('img', { name: 'Big phone photo' })).toHaveAttribute('src', thumbUrl);
+    expect(await size(thumbUrl)).toEqual({ width: 480, height: 384 });
+    const thumbBytes = (await (await page.request.get(thumbUrl)).body()).length;
+    expect(thumbBytes).toBeLessThan(512 * 1024);
+
+    const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+    console.log(`photo: ${mb(original.length)} 5000x4000 → stored ${mb(fullBytes.length)} 2560x2048, thumbnail ${(thumbBytes / 1024).toFixed(0)} KB`);
+  });
+
+  test('rejects photos over 10 MB that can’t be shrunk', async ({ page }) => {
     await page.goto(`/e/${event.token}`);
     await choosePhoto(page, { name: 'huge.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(10.5 * 1024 * 1024) });
     await expect(page.getByRole('alert').filter({ hasText: 'The limit is 10 MB' })).toBeVisible();

@@ -12,8 +12,10 @@ Hosts create an event and share its link or QR code. Guests open it on their pho
 | Backend API | NestJS 12 |
 | Database | PostgreSQL 17 |
 | Monitoring | Prometheus, Alertmanager, Grafana, node-exporter |
-| CI | GitHub Actions |
-| Deployment | Docker Compose on AWS EC2 |
+| Tests | Vitest (backend), Playwright (browser end-to-end) |
+| CI/CD | GitHub Actions |
+| Deployment | Docker Compose on AWS EC2, HTTPS via Caddy + Let's Encrypt |
+| Alerts | Alertmanager → Discord |
 
 ## Quick start
 
@@ -72,22 +74,26 @@ After pulling changes, rerun the start command; `--build` rebuilds what changed.
 ## How it fits together
 
 ```text
-Browser ──► frontend :3000 ──/api/backend/*──► backend :3001 ──► postgres :5432
-                │                                  ▲
-                └──/api/metrics──► prometheus ─────┘ scrapes /metrics every 15s
-                                       │
-                                       └──► alertmanager ──► (notification channel)
-                                       └──► grafana :3002
+                 (EC2 only)
+Browser ──HTTPS──► caddy :443 ──► frontend :3000 ──/api/backend/*──► backend :3001 ──► postgres :5432
+                                     │                                   ▲
+                                     └──/api/metrics──► prometheus ──────┘ scrapes /metrics every 15s
+                                                           │
+                                                           ├──► alertmanager ──► Discord
+                                                           └──► grafana :3002
 ```
+
+Locally there's no Caddy: the browser talks to the frontend on port 3000 directly.
 
 - **The browser only talks to the frontend.** API requests go to `/api/backend/…` on the frontend, which forwards them to the backend. That's why the app works from a phone opening the QR link, and on EC2, without a hard-coded backend address. The backend address comes from the `BACKEND_URL` setting.
 - **Events and photos are stored in PostgreSQL** in the `events` and `user_photos` tables. Every photo belongs to an event, and deleting an event deletes its photos. The backend creates the tables when it starts (photos from before events existed are moved into an "Earlier photos" event), and the data lives in the `postgres-data` volume, so it survives redeploys.
 - **Events:** the host logs in on `/host`, creates an event and gets a link with a random 128-bit token (`/e/<token>`) and a QR code. Anyone with the link can add and view that event's photos, and nothing else. A photo can only be fetched through its own event's token, so other events' photos can't be reached by guessing IDs.
 - **Host login:** one shared `ADMIN_PASSWORD`, with no user accounts (the brief puts complex account systems out of scope). It sets a signed, httpOnly session cookie that lasts 12 hours. After 5 wrong passwords in a minute, logins are blocked for a minute. Hosts can create, rename and delete events, delete photos, and view metrics.
 - **The guest journey:** scan the event's QR code, take a photo or choose one, check the preview, add a description, approve it, and see it in the gallery straight away.
-- **Camera access:** the in-page camera only works over HTTPS or on `localhost`, which is a browser rule. Over plain HTTP, such as a phone on `http://<server-ip>:3000`, "Take a photo" opens the phone's own camera app instead, so the journey still works. HTTPS on EC2 enables the in-page camera there too.
-- **Where the QR code points:** set `PUBLIC_URL` in `.env` on EC2 to the address guests use. When it's unset, the code uses whatever address `/host` was opened on.
-- **Uploads are validated.** Files must be JPEG, PNG, GIF, WebP or HEIC, checked from the file contents rather than the name, and 10 MB or smaller. A description is required, up to 500 characters.
+- **Camera access:** the in-page camera only works over HTTPS or on `localhost`, which is a browser rule. Over plain HTTP, such as a phone on `http://<server-ip>:3000`, "Take a photo" opens the phone's own camera app instead, so the journey still works. On EC2, [HTTPS](#https) enables the in-page camera there too.
+- **Where the QR code points:** `PUBLIC_URL`, the address guests use. On EC2 it's a GitHub variable (see [Deploying to EC2](#deploying-to-ec2)); locally you can leave it unset, and the code uses whatever address `/host` was opened on.
+- **Photos are shrunk in the browser before upload.** Anything larger than 2560 px on its long side is resized (JPEG, quality 0.85), and a 480 px thumbnail is made at the same time. This brings typical phone photos under 1 MB, so uploads are fast on event Wi-Fi, and the gallery loads thumbnails of tens of KB rather than full photos. Re-encoding also **removes EXIF metadata, including GPS location**, and converts HEIC (iPhone) to JPEG wherever the browser can decode it, so every browser can display it. Animated GIFs and photos the browser can't decode are uploaded unchanged. Measured: a 19.4 MB 5000×4000 photo was stored as 2.4 MB at 2560×2048, with a 13 KB thumbnail, and that's a worst case (random noise barely compresses).
+- **Uploads are validated.** The photo and thumbnail must be JPEG, PNG, GIF, WebP or HEIC, checked from the file contents rather than the name. The photo can be up to 10 MB after resizing, and the thumbnail up to 512 KB. A description is required, up to 500 characters.
 - **The backend reports its own health.** `GET /health` says whether the backend is up. `GET /health/ready` also checks the database and returns 503 if it's unreachable.
 
 ### Backend API
@@ -101,8 +107,8 @@ Browser ──► frontend :3000 ──/api/backend/*──► backend :3001 ─
 | `PATCH` `DELETE` | `/events/:id` | Host: rename / delete an event and its photos |
 | `DELETE` | `/photos/:id` | Host: delete a photo |
 | `GET` | `/events/share/:token` | Guest: the event's name (404 for unknown links) |
-| `GET` `POST` | `/events/share/:token/photos` | Guest: list the event's photos / upload one (multipart form: `photo` and `description`) |
-| `GET` | `/events/share/:token/photos/:id/image` | Guest: the image itself, served with its real content type |
+| `GET` `POST` | `/events/share/:token/photos` | Guest: list the event's photos / upload one (multipart form: `photo`, `description` and an optional `thumbnail`) |
+| `GET` | `/events/share/:token/photos/:id/image` | Guest: the image itself, served with its real content type; `?size=thumb` returns the thumbnail (or the full image if it has none) |
 | `GET` | `/health` | Whether the backend is up |
 | `GET` | `/health/ready` | Whether the backend can reach the database (503 if not) |
 | `GET` | `/metrics` | Prometheus metrics |
@@ -112,7 +118,7 @@ Browser ──► frontend :3000 ──/api/backend/*──► backend :3001 ─
 ```text
 backend/                NestJS API
   src/                  controllers, services, metrics module
-  test/                 end-to-end tests
+  test/                 API integration tests (every route, real PostgreSQL)
 frontend/               Next.js app
   app/e/[token]/        guest event page: upload flow and gallery
   app/host/             host dashboard: login, events, QR codes
@@ -121,8 +127,12 @@ frontend/               Next.js app
   app/api/backend/      proxy from the browser to the backend
   app/api/metrics/      dashboard data, read from Prometheus
 monitoring/             Prometheus, Alertmanager and Grafana config (see monitoring/README.md)
-compose.yaml            app stack: frontend, backend, postgres
-compose.monitoring.yaml monitoring stack, layered on top of compose.yaml
+compose.yaml            app stack for local development: frontend, backend, postgres
+compose.monitoring.yaml monitoring stack, layered on top of the app stack
+compose.desktop.yaml    Docker Desktop tweak for node-exporter (local only)
+compose.production.yaml app stack on EC2: prebuilt images + Caddy for HTTPS
+caddy/Caddyfile         HTTPS proxy config
+secrets/                Discord webhook URL for alerts (committed deliberately; private repo)
 e2e/                    Playwright browser tests (full user journey)
 .github/workflows/      CI pipelines and deployment
 scripts/deploy.sh       runs on EC2: deploy, health-check, roll back on failure
@@ -137,7 +147,7 @@ There are three layers of tests:
 | ----- | ----- | -------------- |
 | Unit | `backend/src/**/*.spec.ts` | Login sessions and throttling, image-type detection, health checks, metrics |
 | API integration | `backend/test/*.e2e-spec.ts` | Every backend route against a real PostgreSQL: the host and guest flows, event isolation, upload validation |
-| Browser end-to-end | `e2e/tests/*.spec.ts` | The full user journey in a real browser, on phone and desktop sizes: camera capture and preview/approve upload, the host dashboard, access rules |
+| Browser end-to-end | `e2e/tests/*.spec.ts` | The full user journey in a real browser, on phone and desktop sizes: camera capture and preview/approve upload, resizing and GPS stripping of big photos, thumbnails, the host dashboard, access rules |
 
 ### Browser end-to-end tests (Playwright)
 
@@ -155,12 +165,12 @@ On Windows PowerShell, set the variables first: `$env:E2E_ADMIN_PASSWORD='…'; 
 The same suite runs against any server, so it doubles as the **staging/production acceptance test**:
 
 ```sh
-BASE_URL=http://13.239.43.240:3000 E2E_ADMIN_PASSWORD=<that server's ADMIN_PASSWORD> pnpm test
+BASE_URL=https://13-239-43-240.sslip.io E2E_ADMIN_PASSWORD=<that server's ADMIN_PASSWORD> pnpm test
 ```
 
 Each test creates its own uniquely named event and deletes it afterwards, so running against a live server leaves no test data behind. The in-page camera test only runs on `localhost` or HTTPS, because browsers block the camera elsewhere. Over plain HTTP the suite instead checks the fallback to the phone's camera app. `pnpm test:ui` opens Playwright's interactive runner, and after a failure `pnpm report` shows screenshots and a step-by-step trace.
 
-Measured: 32 tests (16 on each of phone and desktop) in about 12 seconds, and 160 of 160 passed across 5 back-to-back runs with no retries, against the brief's < 1% flake target.
+Measured: 34 tests (17 on each of phone and desktop) in about 15 seconds. Across repeated back-to-back runs with no retries, 262 of 262 passed (160 before the resizing tests were added, 102 after), against the brief's < 1% flake target.
 
 ### Backend tests
 
@@ -189,7 +199,7 @@ docker stop photorepo-test-db
 
 | Workflow | Runs on | What it does |
 | -------- | ------- | ------------ |
-| [Backend CI](.github/workflows/backend-ci.yaml) | Every push and pull request | Unit tests, E2E tests against a real PostgreSQL, build |
+| [Backend CI](.github/workflows/backend-ci.yaml) | Every push and pull request | Unit tests, API integration tests against a real PostgreSQL, build |
 | [Frontend CI](.github/workflows/frontend-ci.yaml) | Pushes and PRs to `main`/`develop` that change the frontend | Lint and production build |
 | [E2E Tests](.github/workflows/e2e.yaml) | Changes to the app, tests or compose files | Starts the app and monitoring in fresh containers, then runs the Playwright suite in Chromium. On failure it uploads screenshots and traces |
 | [Deployment](.github/workflows/deploy.yaml) | Manual (Actions → Deployment → Run workflow) | Builds images, copies them to EC2 and runs `scripts/deploy.sh`, which health-checks the release and rolls back automatically if it fails |
@@ -209,11 +219,24 @@ Seven alert rules cover:
 
 The in-app dashboard at `/admin/metrics` and the Grafana dashboard both show this data.
 
-See [monitoring/README.md](monitoring/README.md) for how each success metric in the project brief is met, and for how to connect alert notifications.
+Firing and resolved alerts are posted to the team's Discord channel. In testing, a `ServiceDown` alert arrived 17.9 s after the backend stopped (brief target: 30 s).
+
+See [monitoring/README.md](monitoring/README.md) for how each success metric in the project brief is met, and how to change or test the Discord webhook.
 
 ## Deploying to EC2
 
 **Actions → Deployment → Run workflow** builds the images, copies them to the instance with the compose files, monitoring config and Discord webhook, and runs [scripts/deploy.sh](scripts/deploy.sh). If the release fails its health checks, the script rolls back to the last healthy release, and the workflow run fails. In a rehearsal, a broken release was replaced in 73 s (brief target: 120 s).
+
+The workflow writes the server's `.env` from the **production** environment in GitHub (Settings → Environments → production):
+
+| Kind | Name | Value |
+| ---- | ---- | ----- |
+| Secret | `EC2_HOST`, `EC2_USER` | The instance's address and SSH user |
+| Secret | `EC2_SSH_KEY`, `EC2_KNOWN_HOSTS` | Deploy key, and the server's host key (`ssh-keyscan <host>`) |
+| Secret | `DB_PASSWORD`, `GRAFANA_ADMIN_PASSWORD` | Any strong values |
+| Secret | `ADMIN_PASSWORD` | The host login for the live site (the deploy stops if it's missing) |
+| Variable | `DB_NAME`, `DB_USER`, `GRAFANA_ADMIN_USER` | e.g. `photorepo`, `photorepo`, `admin` |
+| Variable | `SITE_ADDRESS`, `PUBLIC_URL` | See [HTTPS](#https) below |
 
 ### HTTPS
 

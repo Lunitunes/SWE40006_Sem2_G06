@@ -26,6 +26,10 @@ const SCHEMA_SQL = `
   -- Upgrades for databases created before these columns existed
   ALTER TABLE user_photos ADD COLUMN IF NOT EXISTS mime_type TEXT NOT NULL DEFAULT 'image/jpeg';
   ALTER TABLE user_photos ADD COLUMN IF NOT EXISTS event_id INTEGER REFERENCES events(id) ON DELETE CASCADE;
+  -- Small preview made by the browser at upload time, so galleries don't download full photos.
+  -- NULL for older photos and API uploads without one; those fall back to the full image.
+  ALTER TABLE user_photos ADD COLUMN IF NOT EXISTS thumb_data BYTEA;
+  ALTER TABLE user_photos ADD COLUMN IF NOT EXISTS thumb_mime_type TEXT;
 
   -- Photos uploaded before events existed go into one "Earlier photos" event, so nothing is lost
   DO $$
