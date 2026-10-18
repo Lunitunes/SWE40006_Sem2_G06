@@ -42,3 +42,100 @@ jobs:
           path: images.tar.gz
           retention-days: 1
           if-no-files-found: error
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-images
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Docker images
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-images
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Create deployment environment file
+        env:
+          DB_NAME: ${{ vars.DB_NAME }}
+          DB_USER: ${{ vars.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          GRAFANA_ADMIN_USER: ${{ vars.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: |
+          umask 077
+          {
+            printf 'DB_NAME=%s\n' "$DB_NAME"
+            printf 'DB_USER=%s\n' "$DB_USER"
+            printf 'DB_PASSWORD=%s\n' "$DB_PASSWORD"
+            printf 'GRAFANA_ADMIN_USER=%s\n' "$GRAFANA_ADMIN_USER"
+            printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$GRAFANA_ADMIN_PASSWORD"
+          } > .env
+
+      - name: Transfer deployment files
+        env:
+          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "mkdir -p ~/photo-repo && chmod 700 ~/photo-repo"
+
+          scp -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            images.tar.gz compose.production.yaml .env \
+            "$EC2_USER@$EC2_HOST:~/photo-repo/"
+
+      - name: Deploy containers
+        env:
+          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            bash -se -- "$GITHUB_SHA" <<'REMOTE'
+          set -e
+
+          cd ~/photo-repo
+          chmod 600 .env
+          export IMAGE_TAG="$1"
+
+          docker load -i images.tar.gz
+
+          docker compose -p photo-repo \
+            -f compose.production.yaml \
+            up -d --no-build --pull never
+
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://localhost:3001/health/ready; then
+              echo "Deployment successful"
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "Deployment health check failed"
+          docker compose -p photo-repo \
+            -f compose.production.yaml logs --tail=50
+          exit 1
+          REMOTE
+
+      - name: Clean up local deployment files
+        if: always()
+        run: rm -f .env ~/.ssh/deploy_key
