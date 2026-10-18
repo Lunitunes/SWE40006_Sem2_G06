@@ -1,0 +1,124 @@
+import { expect, test, type APIRequestContext } from '@playwright/test';
+import { choosePhoto, createEvent, deleteEvent, hostApi, type TestEvent } from './helpers';
+
+// The brief's guest journey: open the event link, take or choose a photo, see it, approve it,
+// and it appears in the event gallery
+test.describe('Guest journey', () => {
+  let api: APIRequestContext;
+  let event: TestEvent;
+
+  test.beforeEach(async ({ baseURL }) => {
+    api = await hostApi(baseURL!);
+    event = await createEvent(api, 'guest journey');
+  });
+
+  test.afterEach(async () => {
+    await deleteEvent(api, event.id);
+    await api.dispose();
+  });
+
+  test('chooses a photo, previews and approves it, and sees it in the gallery', async ({ page }) => {
+    await page.goto(`/e/${event.token}`);
+    await expect(page.getByRole('heading', { level: 1, name: event.name })).toBeVisible();
+    await expect(page.getByText('No photos yet')).toBeVisible();
+
+    await choosePhoto(page);
+
+    // Shown the image and asked to approve it before anything is uploaded
+    await expect(page.getByRole('heading', { name: 'Check your photo' })).toBeVisible();
+    const preview = page.getByRole('img', { name: /Preview of the photo/ });
+    await expect(preview).toBeVisible();
+    expect(await preview.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+
+    await page.getByLabel('Description').fill('Cutting the cake');
+    await page.getByRole('button', { name: 'Looks good, upload' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Photo uploaded' })).toBeVisible();
+    const gallery = page.getByRole('region', { name: 'Gallery' });
+    await expect(gallery.getByText('1 photo')).toBeVisible();
+    const photo = gallery.getByRole('img', { name: 'Cutting the cake' });
+    await expect(photo).toBeVisible();
+    // The image really loads from the server, not just the caption
+    await expect.poll(() => photo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+
+    // Guests can't delete anything
+    await expect(page.getByRole('button', { name: 'Delete photo' })).toHaveCount(0);
+  });
+
+  test('takes a photo with the in-page camera', async ({ page, baseURL }) => {
+    // Browsers only allow getUserMedia on HTTPS or localhost; elsewhere the page opens the phone's
+    // camera app instead (covered by the fallback test below)
+    const url = new URL(baseURL!);
+    test.skip(url.protocol !== 'https:' && url.hostname !== 'localhost', 'in-page camera needs HTTPS or localhost');
+
+    await page.goto(`/e/${event.token}`);
+    await page.getByRole('button', { name: /Take a photo/ }).click();
+
+    // Chromium's fake camera stands in for a real one
+    await expect(page.getByLabel('Camera preview')).toBeVisible();
+    const shutter = page.getByRole('button', { name: 'Take photo' });
+    await expect(shutter).toBeEnabled();
+    await shutter.click();
+
+    await expect(page.getByRole('heading', { name: 'Check your photo' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retake' })).toBeVisible();
+    await page.getByLabel('Description').fill('Taken with the camera');
+    await page.getByRole('button', { name: 'Looks good, upload' }).click();
+
+    await expect(page.getByRole('region', { name: 'Gallery' }).getByRole('img', { name: 'Taken with the camera' })).toBeVisible();
+  });
+
+  test('falls back to the phone’s camera app where the in-page camera isn’t allowed', async ({ page }) => {
+    await page.goto(`/e/${event.token}`);
+    // Simulate plain HTTP (e.g. http://<server-ip>), where browsers block the in-page camera
+    await page.evaluate(() => Object.defineProperty(window, 'isSecureContext', { value: false }));
+
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Take a photo/ }).click();
+    const fileChooser = await chooser;
+
+    // It's the input with capture="environment", which phones open in the camera app
+    expect(await fileChooser.element().getAttribute('capture')).toBe('environment');
+    await expect(page.getByLabel('Camera preview')).toHaveCount(0);
+  });
+
+  test('cancelling at the preview step uploads nothing', async ({ page }) => {
+    await page.goto(`/e/${event.token}`);
+    await choosePhoto(page);
+    await expect(page.getByRole('heading', { name: 'Check your photo' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Cancel' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Add a photo' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('No photos yet')).toBeVisible();
+  });
+
+  test('asks for a description before uploading', async ({ page }) => {
+    await page.goto(`/e/${event.token}`);
+    await choosePhoto(page);
+    await page.getByRole('button', { name: 'Looks good, upload' }).click();
+
+    await expect(page.getByRole('alert').filter({ hasText: 'Add a short description' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Check your photo' })).toBeVisible();
+  });
+
+  test('rejects a file that isn’t really an image, even if it claims to be', async ({ page }) => {
+    await page.goto(`/e/${event.token}`);
+    await choosePhoto(page, { name: 'holiday.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('<html>not a photo</html>') });
+    await page.getByLabel('Description').fill('Sneaky');
+    await page.getByRole('button', { name: 'Looks good, upload' }).click();
+
+    // The server checks the file's contents, not its name or claimed type
+    await expect(page.getByRole('alert').filter({ hasText: 'Only JPEG, PNG, GIF, WebP or HEIC' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('No photos yet')).toBeVisible();
+  });
+
+  test('rejects photos over 10 MB before uploading', async ({ page }) => {
+    await page.goto(`/e/${event.token}`);
+    await choosePhoto(page, { name: 'huge.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(10.5 * 1024 * 1024) });
+    await expect(page.getByRole('alert').filter({ hasText: 'The limit is 10 MB' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Add a photo' })).toBeVisible();
+  });
+});

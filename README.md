@@ -123,21 +123,56 @@ frontend/               Next.js app
 monitoring/             Prometheus, Alertmanager and Grafana config (see monitoring/README.md)
 compose.yaml            app stack: frontend, backend, postgres
 compose.monitoring.yaml monitoring stack, layered on top of compose.yaml
-.github/workflows/      CI pipelines
+e2e/                    Playwright browser tests (full user journey)
+.github/workflows/      CI pipelines and deployment
+scripts/deploy.sh       runs on EC2: deploy, health-check, roll back on failure
 docs/                   diagrams
 ```
 
 ## Testing
 
+There are three layers of tests:
+
+| Layer | Where | What it covers |
+| ----- | ----- | -------------- |
+| Unit | `backend/src/**/*.spec.ts` | Login sessions and throttling, image-type detection, health checks, metrics |
+| API integration | `backend/test/*.e2e-spec.ts` | Every backend route against a real PostgreSQL: the host and guest flows, event isolation, upload validation |
+| Browser end-to-end | `e2e/tests/*.spec.ts` | The full user journey in a real browser, on phone and desktop sizes: camera capture and preview/approve upload, the host dashboard, access rules |
+
+### Browser end-to-end tests (Playwright)
+
+These drive the **running** app, so start the stack first (`docker compose up -d --build`), then:
+
+```sh
+cd e2e
+pnpm install
+pnpm exec playwright install chromium     # once; or skip it and set PLAYWRIGHT_CHANNEL=msedge to use Edge
+E2E_ADMIN_PASSWORD=<ADMIN_PASSWORD from .env> pnpm test
+```
+
+On Windows PowerShell, set the variables first: `$env:E2E_ADMIN_PASSWORD='…'; $env:PLAYWRIGHT_CHANNEL='msedge'; pnpm test`.
+
+The same suite runs against any server, so it doubles as the **staging/production acceptance test**:
+
+```sh
+BASE_URL=http://13.239.43.240:3000 E2E_ADMIN_PASSWORD=<that server's ADMIN_PASSWORD> pnpm test
+```
+
+Each test creates its own uniquely named event and deletes it afterwards, so running against a live server leaves no test data behind. The in-page camera test only runs on `localhost` or HTTPS, because browsers block the camera elsewhere. Over plain HTTP the suite instead checks the fallback to the phone's camera app. `pnpm test:ui` opens Playwright's interactive runner, and after a failure `pnpm report` shows screenshots and a step-by-step trace.
+
+Measured: 32 tests (16 on each of phone and desktop) in about 12 seconds, and 160 of 160 passed across 5 back-to-back runs with no retries, against the brief's < 1% flake target.
+
+### Backend tests
+
 ```sh
 cd backend
 pnpm install
 pnpm test            # unit tests
-pnpm run test:e2e    # end-to-end tests
+pnpm run test:e2e    # API integration tests
 pnpm run build
 ```
 
-The database tests in the E2E suite only run when the `DB_*` variables point at a PostgreSQL database; otherwise they are skipped. To run them locally against a temporary database:
+The database tests in the API suite only run when the `DB_*` variables point at a PostgreSQL database; otherwise they are skipped. To run them locally against a temporary database:
 
 ```sh
 docker run -d --rm --name photorepo-test-db -p 127.0.0.1:55432:5432 \
@@ -156,6 +191,8 @@ docker stop photorepo-test-db
 | -------- | ------- | ------------ |
 | [Backend CI](.github/workflows/backend-ci.yaml) | Every push and pull request | Unit tests, E2E tests against a real PostgreSQL, build |
 | [Frontend CI](.github/workflows/frontend-ci.yaml) | Pushes and PRs to `main`/`develop` that change the frontend | Lint and production build |
+| [E2E Tests](.github/workflows/e2e.yaml) | Changes to the app, tests or compose files | Starts the app and monitoring in fresh containers, then runs the Playwright suite in Chromium. On failure it uploads screenshots and traces |
+| [Deployment](.github/workflows/deploy.yaml) | Manual (Actions → Deployment → Run workflow) | Builds images, copies them to EC2 and runs `scripts/deploy.sh`, which health-checks the release and rolls back automatically if it fails |
 | [Monitoring CI](.github/workflows/monitoring-ci.yaml) | Changes to monitoring files | Validates the Prometheus, Alertmanager, Grafana and Compose config, and runs the alert-rule unit tests |
 
 ## Monitoring

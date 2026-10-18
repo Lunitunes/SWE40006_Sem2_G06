@@ -1,0 +1,15 @@
+{
+  "name": "photo-repo-e2e",
+  "private": true,
+  "description": "End-to-end acceptance tests: drive the running app in a real browser",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0"
+  },
+  "packageManager": "pnpm@11.21.0"
+}

@@ -1,0 +1,111 @@
+name: E2E Tests
+
+# End-to-end acceptance tests (brief: "end-to-end acceptance testing of a complete user journey"):
+# start the whole app in fresh containers, then drive it in a real browser with Playwright
+on:
+  push:
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'e2e/**'
+      - 'compose.yaml'
+      - 'compose.monitoring.yaml'
+      - 'monitoring/**'
+      - '.github/workflows/e2e.yaml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'e2e/**'
+      - 'compose.yaml'
+      - 'compose.monitoring.yaml'
+      - 'monitoring/**'
+      - '.github/workflows/e2e.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Browser tests (mobile + desktop)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Throwaway values for the test stack only
+      DB_PASSWORD: e2e-ci-db-password
+      ADMIN_PASSWORD: e2e-ci-host-password
+      GRAFANA_ADMIN_PASSWORD: e2e-ci-grafana-password
+      E2E_ADMIN_PASSWORD: e2e-ci-host-password
+      BASE_URL: http://localhost:3000
+      # App + monitoring, like production (the metrics page tests need Prometheus)
+      COMPOSE: docker compose -f compose.yaml -f compose.monitoring.yaml
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # The committed webhook posts to the team's Discord; the test stack must not (its targets are
+      # briefly "down" while booting, which would page everyone on every push)
+      - name: Silence Discord alerts for the test stack
+        run: printf 'http://127.0.0.1:9/discord-disabled-in-ci' > secrets/discord_webhook_url
+
+      # Clean-slate containers every run (brief: < 1% flake rate), so failures mean real bugs
+      - name: Build and start the app
+        run: $COMPOSE up -d --build
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: e2e/pnpm-lock.yaml
+
+      - name: Install Playwright and Chromium
+        working-directory: e2e
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Wait for the app to be ready
+        run: |
+          for attempt in $(seq 1 60); do
+            # Backend + database + frontend serving, and Prometheus has scraped the backend at least once
+            if curl -fsS -o /dev/null http://localhost:3001/health/ready \
+              && curl -fsS -o /dev/null http://localhost:3000/ \
+              && curl -fsS 'http://localhost:9090/api/v1/query?query=database_up' | grep -q '"1"\]'; then
+              echo "App is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::App did not become ready"
+          $COMPOSE logs --tail=80
+          exit 1
+
+      - name: Run E2E tests
+        working-directory: e2e
+        run: pnpm test
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+      - name: App logs
+        if: failure()
+        run: $COMPOSE logs --tail=100 backend frontend prometheus
+
+      - name: Stop the app
+        if: always()
+        run: $COMPOSE down -v
