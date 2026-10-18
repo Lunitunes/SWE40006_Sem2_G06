@@ -8,12 +8,18 @@ route:
 
 receivers:
   - name: devops
-    # No notification channel is configured yet; firing alerts are visible at http://localhost:9093.
-    # To notify the team, put a webhook URL in secrets/discord_webhook_url (the /secrets folder is
-    # gitignored) and uncomment:
-    # discord_configs:
-    #   - webhook_url_file: /etc/alertmanager/secrets/discord_webhook_url
-    #     send_resolved: true
+    # Sends alerts to the team's Discord channel. The webhook URL is a secret, so it lives in
+    # secrets/discord_webhook_url (the /secrets folder is gitignored), mounted into the container.
+    # See monitoring/README.md for how to create the webhook.
+    discord_configs:
+      - webhook_url_file: /etc/alertmanager-secrets/discord_webhook_url
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}🔴 {{ .CommonLabels.alertname }}{{ else }}✅ Resolved: {{ .CommonLabels.alertname }}{{ end }}'
+        message: |-
+          {{ range .Alerts -}}
+          {{ if eq $.Status "resolved" }}Was: {{ end }}**{{ .Annotations.summary }}**{{ if .Labels.severity }} ({{ .Labels.severity }}){{ end }}
+          {{ .Annotations.description }}
+          {{ end -}}
 
 inhibit_rules:
   # While a service is down, don't also page about its error rate or latency

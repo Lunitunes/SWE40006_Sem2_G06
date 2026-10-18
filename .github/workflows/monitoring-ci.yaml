@@ -48,3 +48,4 @@ jobs:
         env:
           GRAFANA_ADMIN_PASSWORD: ci-placeholder
           DB_PASSWORD: ci-placeholder
+          ADMIN_PASSWORD: ci-placeholder

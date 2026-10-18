@@ -9,6 +9,8 @@ services:
       DB_NAME: ${DB_NAME:-photorepo}
       DB_USER: ${DB_USER:-photorepo}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      # Host login for /host (creating events) and /admin/metrics
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
     ports:
       - "3001:3001"
     depends_on:
@@ -23,6 +25,8 @@ services:
     environment:
       # The browser calls /api/backend/... on the frontend, which forwards to this address
       BACKEND_URL: http://backend:3001
+      # Public address the /share QR code points to (e.g. https://photos.example.com); blank = the address in the browser
+      PUBLIC_URL: ${PUBLIC_URL:-}
     ports:
       - "3000:3000"
     depends_on:

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import styles from '../ui.module.css';
 
 interface PhotoItem {
   id: number;
@@ -9,60 +10,104 @@ interface PhotoItem {
   uploaded_at: string;
 }
 
-// refreshKey changes after each upload, which re-runs the fetch below
-export default function Gallery({ refreshKey = 0 }: { refreshKey?: number }) {
+const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+type Props = {
+  // The event's share token: the gallery only ever shows that event's photos
+  token: string;
+  // Changes after each upload, which re-runs the fetch below
+  refreshKey?: number;
+  // Hosts get a delete button on each photo
+  canDelete?: boolean;
+};
+
+export default function Gallery({ token, refreshKey = 0, canDelete = false }: Props) {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [failed, setFailed] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const base = `/api/backend/events/share/${encodeURIComponent(token)}/photos`;
 
   // Fetch the photo details array on mount, and again whenever refreshKey changes
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/backend/upload/all')
+    fetch(base)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
       .then((data: PhotoItem[]) => {
-        if (!cancelled) setPhotos(data);
+        if (cancelled) return;
+        setPhotos(data);
+        setFailed(false);
       })
-      .catch((error) => console.error('Error fetching gallery metadata:', error))
+      .catch((error) => {
+        console.error('Error fetching gallery metadata:', error);
+        if (!cancelled) setFailed(true);
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [refreshKey]);
+  }, [base, refreshKey]);
 
-  if (loading) return <div style={{ textAlign: 'center', marginTop: '20px' }}>Loading gallery...</div>;
+  const remove = async (photo: PhotoItem) => {
+    if (!window.confirm(`Delete “${photo.description}”? This can’t be undone.`)) return;
+    setDeleteError(null);
+    const res = await fetch(`/api/backend/photos/${photo.id}`, { method: 'DELETE' }).catch(() => null);
+    if (res?.ok) setPhotos((current) => current.filter((p) => p.id !== photo.id));
+    else setDeleteError(res?.status === 401 ? 'Your host login has expired. Log in again to delete photos.' : 'The photo could not be deleted. Try again.');
+  };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '40px auto', fontFamily: 'sans-serif' }}>
-      <h3>🖼️ Database Photo Gallery</h3>
-      
-      {photos.length === 0 ? (
-        <p style={{ color: '#666', textAlign: 'center' }}>No photos uploaded yet.</p>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '20px' }}>
-          {photos.map((item) => (
-            <div key={item.id} style={{ border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-              
-              {/* 🌟 Directly point the src to your new NestJS raw binary streaming endpoint */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img 
-                src={`/api/backend/upload/image/${item.id}`}
-                alt={item.image_name}
-                style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }}
-              />
-              
-              <div style={{ padding: '12px' }}>
-                <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', fontSize: '15px' }}>{item.description}</p>
-                <small style={{ color: '#888', display: 'block' }}>
-                  {new Date(item.uploaded_at).toLocaleDateString()}
-                </small>
-              </div>
+    <section className={styles.gallery} aria-labelledby="gallery-heading">
+      <div className={styles.galleryHead}>
+        <h2 id="gallery-heading" className={styles.sectionTitle}>
+          Gallery
+        </h2>
+        {!loading && !failed && (
+          <span className={styles.count}>
+            {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
+          </span>
+        )}
+      </div>
 
-            </div>
-          ))}
+      {deleteError && (
+        <div className={styles.status} role="alert" style={{ marginBottom: 12 }}>
+          <span className={`${styles.statusIcon} ${styles.critical}`} aria-hidden>
+            !
+          </span>
+          <span>{deleteError}</span>
         </div>
       )}
-    </div>
+
+      {loading ? (
+        <p className={styles.empty}>Loading photos…</p>
+      ) : failed ? (
+        <p className={styles.empty} role="alert">
+          The gallery couldn’t be loaded right now. Try refreshing the page.
+        </p>
+      ) : photos.length === 0 ? (
+        <p className={styles.empty}>No photos yet. Be the first to add one!</p>
+      ) : (
+        <ul className={styles.grid}>
+          {photos.map((item) => (
+            <li key={item.id} className={styles.photo}>
+              {/* Served by the backend through the same-origin proxy */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`${base}/${item.id}/image`} alt={item.description} loading="lazy" />
+              <div className={styles.photoBody}>
+                <p className={styles.photoCaption}>{item.description}</p>
+                <p className={styles.photoMeta}>{dateFormat.format(new Date(item.uploaded_at))}</p>
+                {canDelete && (
+                  <button type="button" className={styles.linkDanger} onClick={() => remove(item)}>
+                    Delete photo
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

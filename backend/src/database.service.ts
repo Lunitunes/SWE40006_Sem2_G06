@@ -5,15 +5,42 @@ import { MetricsService } from './metrics/metrics.service';
 
 // Idempotent, so it's safe to run on every startup (compose, CI and EC2 all get the same schema)
 const SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS events (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    -- Random share token: knowing it is what grants guests access to the event
+    token TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+
   CREATE TABLE IF NOT EXISTS user_photos (
     id SERIAL PRIMARY KEY,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     image_name TEXT NOT NULL,
     mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
     image_data BYTEA NOT NULL,
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
+
+  -- Upgrades for databases created before these columns existed
   ALTER TABLE user_photos ADD COLUMN IF NOT EXISTS mime_type TEXT NOT NULL DEFAULT 'image/jpeg';
+  ALTER TABLE user_photos ADD COLUMN IF NOT EXISTS event_id INTEGER REFERENCES events(id) ON DELETE CASCADE;
+
+  -- Photos uploaded before events existed go into one "Earlier photos" event, so nothing is lost
+  DO $$
+  DECLARE legacy_event INTEGER;
+  BEGIN
+    IF EXISTS (SELECT 1 FROM user_photos WHERE event_id IS NULL) THEN
+      INSERT INTO events (name, token)
+        VALUES ('Earlier photos', replace(gen_random_uuid()::text, '-', ''))
+        RETURNING id INTO legacy_event;
+      UPDATE user_photos SET event_id = legacy_event WHERE event_id IS NULL;
+    END IF;
+  END $$;
+
+  ALTER TABLE user_photos ALTER COLUMN event_id SET NOT NULL;
+  CREATE INDEX IF NOT EXISTS user_photos_event_uploaded_idx ON user_photos (event_id, uploaded_at DESC);
 `;
 
 const HEALTH_TIMEOUT_MS = 2000;

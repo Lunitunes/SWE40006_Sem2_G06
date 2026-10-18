@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import LineChart from './LineChart';
 import { formatBytes, formatBytesRate, formatDuration, formatPct, formatRate, formatTime } from './format';
@@ -60,10 +61,13 @@ function StatTile(props: { label: string; value: string; note: string; status?: 
   );
 }
 
-async function fetchMetrics(range: RangeKey): Promise<{ data: MetricsResponse } | { error: string }> {
+async function fetchMetrics(
+  range: RangeKey,
+): Promise<{ data: MetricsResponse } | { error: string; needsLogin?: boolean }> {
   try {
     const res = await fetch(`/api/metrics?range=${range}`, { cache: 'no-store' });
     const body = await res.json();
+    if (res.status === 401) return { error: body.error ?? 'Host login required.', needsLogin: true };
     return res.ok ? { data: body } : { error: body.error ?? `Request failed (${res.status})` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
@@ -86,6 +90,7 @@ export default function MetricsDashboard() {
   const [error, setError] = useState<string | null>(null);
   // True while a refetch is in flight; the previous frame stays on screen, dimmed
   const [loading, setLoading] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +101,11 @@ export default function MetricsDashboard() {
         if ('data' in result) {
           setData(result.data);
           setError(null);
+          setNeedsLogin(false);
+        } else if (result.needsLogin) {
+          // Not logged in, or the session expired: hide the data rather than show stale numbers
+          setData(null);
+          setNeedsLogin(true);
         } else {
           // Keep showing the last good data; just flag that it's stale
           setError(result.error);
@@ -124,6 +134,22 @@ export default function MetricsDashboard() {
     stats?.errorPct == null ? undefined : stats.errorPct > 1 ? 'critical' : stats.errorPct > 0 ? 'warning' : 'good';
   const latencyStatus: Status | undefined =
     stats?.p95Seconds == null ? undefined : stats.p95Seconds > 1 ? 'critical' : stats.p95Seconds > 0.5 ? 'warning' : 'good';
+
+  if (needsLogin) {
+    return (
+      <div className={styles.root}>
+        <header className={styles.header}>
+          <div>
+            <h1 className={styles.title}>Production metrics</h1>
+            <p className={styles.subtitle}>
+              Metrics are only available to hosts. <Link href="/host">Log in on the host dashboard</Link>, then come
+              back to this page.
+            </p>
+          </div>
+        </header>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.root}>

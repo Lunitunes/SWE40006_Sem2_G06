@@ -5,10 +5,10 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import styles from './Navbar.module.css';
 
-// Ops tools (Grafana, Prometheus, Alertmanager) are deliberately not linked here: this bar is seen
-// by guests uploading photos. Their URLs are in the README.
+// Guests arrive on their event page from the QR code, so the links are for hosts. Ops tools
+// (Grafana, Prometheus, Alertmanager) are deliberately not linked; their URLs are in the README.
 const APP_LINKS = [
-  { href: '/upload', label: 'Upload' },
+  { href: '/host', label: 'Events' },
   { href: '/admin/metrics', label: 'Metrics' },
 ];
 
@@ -22,7 +22,7 @@ export default function Navbar() {
   return (
     <header className={styles.bar}>
       <nav className={styles.nav} aria-label="Main">
-        <Link href="/upload" className={styles.brand} onClick={close}>
+        <Link href="/" className={styles.brand} onClick={close}>
           Photo Repo
         </Link>
 

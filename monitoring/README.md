@@ -35,7 +35,7 @@ On Docker Desktop (Windows/macOS), `node-exporter` needs the `compose.desktop.ya
 | -------------- | -------------- |
 | Metrics refresh every 15 seconds | `scrape_interval: 15s` in `prometheus/prometheus.yml`; the dashboard refreshes every `15s` |
 | CPU, RAM, disk, network, HTTP performance | Panels on the Grafana dashboard (`grafana/dashboards/production-overview.json`) |
-| Alert sent within 30 seconds | `ServiceDown` has no pending period. Its rule group is evaluated every 5s and `group_wait` is 5s, so the worst case is 15s scrape + 5s timeout + 5s evaluation + 5s grouping = 30s |
+| Alert sent within 30 seconds | `ServiceDown` has no pending period. Its rule group is evaluated every 5s and `group_wait` is 5s, so the worst case is 15s scrape + 5s timeout + 5s evaluation + 5s grouping = 30s. Measured delivery to the webhook was 17.9s; see [Sending alerts](#sending-alerts-to-the-team) |
 | HTTP 500s above 1% of traffic over a rolling 5 minutes | `HighHttpErrorRate` rule |
 | Storage depleting in 5% steps | `DiskSpaceLow` fires a new alert at 20%, 15%, 10% and 5% free; it becomes critical at 10% or less |
 | Database outage | `DatabaseDown` fires when the backend can't reach PostgreSQL (`database_up` metric), even while the backend itself is up |
@@ -45,8 +45,23 @@ The alert rules are unit tested in `prometheus/alerts.test.yml`. The `Monitoring
 
 ## Sending alerts to the team
 
-No notification channel is set up yet. To send alerts to a Discord channel:
+Alerts go to a Discord channel, firing and resolved, as messages like "🔴 ServiceDown" and "✅ Resolved: ServiceDown". Each machine running the stack needs the webhook URL once:
 
-1. Put the webhook URL in `secrets/discord_webhook_url` at the repo root. The `/secrets` folder is gitignored.
-2. Uncomment `discord_configs` in `alertmanager/alertmanager.yml`.
-3. Uncomment the `./secrets` volume under `alertmanager` in `compose.monitoring.yaml`.
+1. **Create the webhook** in Discord: open the channel's settings, choose **Integrations → Webhooks → New Webhook**, then **Copy Webhook URL**. You need the Manage Webhooks permission on the server.
+2. **Save the URL** as the only content of `secrets/discord_webhook_url` at the repo root:
+   ```powershell
+   Set-Content -NoNewline secrets\discord_webhook_url 'https://discord.com/api/webhooks/…'   # Windows
+   ```
+   ```sh
+   printf '%s' 'https://discord.com/api/webhooks/…' > secrets/discord_webhook_url             # Linux / EC2
+   ```
+   The `/secrets` folder is gitignored, so the URL is never committed. Anyone who has the URL can post to the channel.
+3. **Send a test alert** to check it works. Alertmanager reads the file each time it sends, so no restart is needed:
+   ```sh
+   docker compose exec alertmanager sh -c "amtool alert add PhotoRepoTestAlert severity=info --annotation='summary=\"Test alert from Photo Repo\"' --annotation='description=\"If you can read this, Discord alerts are working.\"' --alertmanager.url=http://localhost:9093"
+   ```
+   The message should arrive within about 10 seconds.
+
+Until the file exists, alerts still fire and show in Alertmanager and on the dashboards; Alertmanager just logs that it couldn't send them.
+
+**Measured:** with the backend stopped, the `ServiceDown` message reached a webhook 17.9 s later, within the 30 s target. The "Resolved" message followed once the backend restarted. The test used a stand-in webhook server on the Docker network in place of Discord.

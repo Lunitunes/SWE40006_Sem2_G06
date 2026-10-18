@@ -2,7 +2,7 @@
 
 A web-based photo upload app, built to demonstrate a DevOps pipeline: GitHub, GitHub Actions CI, Docker, and Prometheus/Grafana monitoring.
 
-Users open the site by link or QR code, choose or take a photo, add a description and upload it. The photos are stored in PostgreSQL and shown in a gallery.
+Hosts create an event and share its link or QR code. Guests open it on their phone, take or choose a photo, check it, and upload it to that event's gallery. No accounts are needed: the event link itself grants access.
 
 ![System diagram](docs/System-Diagram.drawio.png)
 
@@ -28,7 +28,7 @@ Users open the site by link or QR code, choose or take a photo, add a descriptio
 cp .env.example .env
 ```
 
-Edit `.env` and set `GRAFANA_ADMIN_PASSWORD` and `DB_PASSWORD`. Any values work locally. `.env` is gitignored, so never commit it.
+Edit `.env` and set `GRAFANA_ADMIN_PASSWORD`, `DB_PASSWORD` and `ADMIN_PASSWORD`, which is the host login for creating events and viewing metrics. Any values work locally. `.env` is gitignored, so never commit it.
 
 `.env` also sets `COMPOSE_FILE`, which tells Docker Compose which compose files to combine, so the commands below don't need any `-f` flags. The example is set up for Docker Desktop on Windows and macOS. On a Linux server such as EC2, switch to the commented-out Linux line.
 
@@ -50,8 +50,9 @@ On Docker Desktop, the host CPU, memory, disk and network figures come from Dock
 
 | What | URL |
 | ---- | --- |
-| Upload page and gallery | <http://localhost:3000/upload> |
-| Metrics dashboard | <http://localhost:3000/admin/metrics> |
+| Host dashboard: create events, get QR codes | <http://localhost:3000/host>, logging in with `ADMIN_PASSWORD` from `.env` |
+| Guest event page | `http://localhost:3000/e/<token>`, opened from an event's link or QR code |
+| Metrics dashboard | <http://localhost:3000/admin/metrics>, hosts only |
 | Grafana | <http://localhost:3002>, logging in with the Grafana user and password from `.env` |
 | Prometheus | <http://localhost:9090>, no login |
 | Alertmanager | <http://localhost:9093>, no login |
@@ -79,8 +80,13 @@ Browser ──► frontend :3000 ──/api/backend/*──► backend :3001 ─
                                        └──► grafana :3002
 ```
 
-- **The browser only talks to the frontend.** Upload requests go to `/api/backend/upload…` on the frontend, which forwards them to the backend. That's why the app works from a phone opening the QR link, and on EC2, without a hard-coded backend address. The backend address comes from the `BACKEND_URL` setting.
-- **Photos are stored in PostgreSQL** in the `user_photos` table. The backend creates the table when it starts, and the data lives in the `postgres-data` volume, so it survives redeploys.
+- **The browser only talks to the frontend.** API requests go to `/api/backend/…` on the frontend, which forwards them to the backend. That's why the app works from a phone opening the QR link, and on EC2, without a hard-coded backend address. The backend address comes from the `BACKEND_URL` setting.
+- **Events and photos are stored in PostgreSQL** in the `events` and `user_photos` tables. Every photo belongs to an event, and deleting an event deletes its photos. The backend creates the tables when it starts (photos from before events existed are moved into an "Earlier photos" event), and the data lives in the `postgres-data` volume, so it survives redeploys.
+- **Events:** the host logs in on `/host`, creates an event and gets a link with a random 128-bit token (`/e/<token>`) and a QR code. Anyone with the link can add and view that event's photos, and nothing else. A photo can only be fetched through its own event's token, so other events' photos can't be reached by guessing IDs.
+- **Host login:** one shared `ADMIN_PASSWORD`, with no user accounts (the brief puts complex account systems out of scope). It sets a signed, httpOnly session cookie that lasts 12 hours. After 5 wrong passwords in a minute, logins are blocked for a minute. Hosts can create, rename and delete events, delete photos, and view metrics.
+- **The guest journey:** scan the event's QR code, take a photo or choose one, check the preview, add a description, approve it, and see it in the gallery straight away.
+- **Camera access:** the in-page camera only works over HTTPS or on `localhost`, which is a browser rule. Over plain HTTP, such as a phone on `http://<server-ip>:3000`, "Take a photo" opens the phone's own camera app instead, so the journey still works. HTTPS on EC2 enables the in-page camera there too.
+- **Where the QR code points:** set `PUBLIC_URL` in `.env` on EC2 to the address guests use. When it's unset, the code uses whatever address `/host` was opened on.
 - **Uploads are validated.** Files must be JPEG, PNG, GIF, WebP or HEIC, checked from the file contents rather than the name, and 10 MB or smaller. A description is required, up to 500 characters.
 - **The backend reports its own health.** `GET /health` says whether the backend is up. `GET /health/ready` also checks the database and returns 503 if it's unreachable.
 
@@ -88,9 +94,15 @@ Browser ──► frontend :3000 ──/api/backend/*──► backend :3001 ─
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
-| `POST` | `/upload` | Upload a photo (multipart form: `photo` file and `description`) |
-| `GET` | `/upload/all` | List photos: id, description, file name, upload time |
-| `GET` | `/upload/image/:id` | The image itself, served with its real content type |
+| `POST` | `/auth/login` | Host login (`{ "password": "…" }`); sets the session cookie |
+| `POST` | `/auth/logout` | Clears the session cookie |
+| `GET` | `/auth/me` | `{ "authenticated": true/false }` |
+| `GET` `POST` | `/events` | Host: list events (with photo counts) / create one (`{ "name": "…" }`) |
+| `PATCH` `DELETE` | `/events/:id` | Host: rename / delete an event and its photos |
+| `DELETE` | `/photos/:id` | Host: delete a photo |
+| `GET` | `/events/share/:token` | Guest: the event's name (404 for unknown links) |
+| `GET` `POST` | `/events/share/:token/photos` | Guest: list the event's photos / upload one (multipart form: `photo` and `description`) |
+| `GET` | `/events/share/:token/photos/:id/image` | Guest: the image itself, served with its real content type |
 | `GET` | `/health` | Whether the backend is up |
 | `GET` | `/health/ready` | Whether the backend can reach the database (503 if not) |
 | `GET` | `/metrics` | Prometheus metrics |
@@ -102,8 +114,10 @@ backend/                NestJS API
   src/                  controllers, services, metrics module
   test/                 end-to-end tests
 frontend/               Next.js app
-  app/upload/           upload form and gallery
-  app/admin/metrics/    metrics dashboard
+  app/e/[token]/        guest event page: upload flow and gallery
+  app/host/             host dashboard: login, events, QR codes
+  app/_components/      navbar, QR code, photo components (camera, preview and approve, gallery)
+  app/admin/metrics/    metrics dashboard (hosts only)
   app/api/backend/      proxy from the browser to the backend
   app/api/metrics/      dashboard data, read from Prometheus
 monitoring/             Prometheus, Alertmanager and Grafana config (see monitoring/README.md)
@@ -141,6 +155,7 @@ docker stop photorepo-test-db
 | Workflow | Runs on | What it does |
 | -------- | ------- | ------------ |
 | [Backend CI](.github/workflows/backend-ci.yaml) | Every push and pull request | Unit tests, E2E tests against a real PostgreSQL, build |
+| [Frontend CI](.github/workflows/frontend-ci.yaml) | Pushes and PRs to `main`/`develop` that change the frontend | Lint and production build |
 | [Monitoring CI](.github/workflows/monitoring-ci.yaml) | Changes to monitoring files | Validates the Prometheus, Alertmanager, Grafana and Compose config, and runs the alert-rule unit tests |
 
 ## Monitoring
@@ -164,11 +179,13 @@ See [monitoring/README.md](monitoring/README.md) for how each success metric in 
 | Problem | Fix |
 | ------- | --- |
 | `port 3000 is already allocated` | Another app, such as a local `next dev`, is using the port. Stop it and start again. |
-| `Set DB_PASSWORD in .env` / `Set GRAFANA_ADMIN_PASSWORD in .env` | `.env` is missing or incomplete; see [Configure](#2-configure). |
+| `Set DB_PASSWORD in .env` (or `GRAFANA_ADMIN_PASSWORD`, `ADMIN_PASSWORD`) | `.env` is missing or incomplete; see [Configure](#2-configure). |
 | `docker` not recognised | Restart your terminal or VS Code after installing Docker. |
 | Grafana login fails | Grafana only reads the password from `.env` the first time it starts; changing `.env` later has no effect. Reset it with `docker compose exec grafana grafana cli admin reset-admin-password <new-password>`. |
 | "node is down" alert, or node-exporter fails to start | `COMPOSE_FILE` in `.env` is wrong for your machine. On Docker Desktop it must include `compose.desktop.yaml`; see [Configure](#2-configure). |
 | `DiskSpaceLow` alert on Docker Desktop | It's real: Docker Desktop's virtual disk is filling up. `docker system prune` frees space. |
+| Host login: "Too many failed attempts" | Wait a minute. Logins are blocked for a minute after 5 wrong passwords. |
+| Forgot the host password | It's `ADMIN_PASSWORD` in `.env`. Change it there and run `docker compose up -d backend`; this also logs out every host. |
 | Upload fails with "Could not reach the backend" | Check `docker compose ps`. The backend waits for Postgres to be healthy before it starts. |
 | Changed alert rules aren't taking effect | Reload Prometheus and Alertmanager; see [monitoring/README.md](monitoring/README.md). |
 

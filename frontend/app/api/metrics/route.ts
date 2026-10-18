@@ -3,6 +3,19 @@ import { RANGES, type Alert, type MetricsResponse, type Point, type RangeKey, ty
 
 // Server-side only: in Docker this is http://prometheus:9090, which the browser can't reach directly
 const PROMETHEUS_URL = process.env.PROMETHEUS_URL ?? 'http://localhost:9090';
+const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:3001';
+
+// Metrics are for hosts/operators: check the session cookie with the backend, which owns login
+async function isHost(request: NextRequest): Promise<boolean> {
+  const cookie = request.headers.get('cookie');
+  if (!cookie) return false;
+  try {
+    const res = await fetch(`${BACKEND_URL}/auth/me`, { headers: { cookie }, cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    return res.ok && (await res.json()).authenticated === true;
+  } catch {
+    return false;
+  }
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +50,10 @@ async function scalar(query: string): Promise<number | null> {
 }
 
 export async function GET(request: NextRequest) {
+  if (!(await isHost(request))) {
+    return Response.json({ error: 'Host login required.' }, { status: 401 });
+  }
+
   const param = request.nextUrl.searchParams.get('range');
   const range: RangeKey = param && param in RANGES ? (param as RangeKey) : '1h';
   const rangeSeconds = RANGES[range];

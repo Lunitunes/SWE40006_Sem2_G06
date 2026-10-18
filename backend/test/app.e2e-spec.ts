@@ -45,10 +45,10 @@ describe('AppController (e2e)', () => {
   });
 
   it('records 4xx responses with the route template, not the raw URL', async () => {
-    await request(app.getHttpServer()).get('/upload/image/not-a-number').expect(400);
+    await request(app.getHttpServer()).get('/events/share/SOMETOKENSOMETOKEN/photos/not-a-number/image').expect(400);
 
     const res = await request(app.getHttpServer()).get('/metrics').expect(200);
-    expect(res.text).toContain('route="/upload/image/:id",status_code="400"');
+    expect(res.text).toContain('route="/events/share/:token/photos/:id/image",status_code="400"');
   });
 
   afterEach(async () => {
