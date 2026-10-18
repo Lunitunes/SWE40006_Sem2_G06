@@ -23,6 +23,9 @@ services:
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
+      # Single instance: turn off clustering (HA gossip), which otherwise crash-loops when the
+      # container's network address isn't in a private range ("No private IP address found")
+      - --cluster.listen-address=
     volumes:
       - ./monitoring/alertmanager:/etc/alertmanager:ro
       - alertmanager-data:/alertmanager

@@ -2,13 +2,17 @@ FROM node:24
 
 WORKDIR /app
 
-COPY package*.json ./
+# Same package manager and lockfile as CI, so the image gets exactly the dependency versions
+# the tests ran against (npm install ignored pnpm-lock.yaml and re-resolved versions)
+RUN npm install -g pnpm@11.21.0
 
-RUN npm install
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN npm run build
+RUN pnpm run build
 
 EXPOSE 3001
 

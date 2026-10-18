@@ -8,6 +8,8 @@ services:
       DB_NAME: ${DB_NAME:-photorepo}
       DB_USER: ${DB_USER:-photorepo}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      # Host login for /host (creating events) and /admin/metrics
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:
@@ -19,6 +21,8 @@ services:
     image: photo-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
       BACKEND_URL: http://backend:3001
+      # Address the event QR codes point to (e.g. http://<ec2-public-ip>:3000); blank = the browser's address
+      PUBLIC_URL: ${PUBLIC_URL:-}
     ports:
       - "3000:3000"
     depends_on:

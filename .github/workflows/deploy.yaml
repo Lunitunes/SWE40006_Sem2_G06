@@ -76,7 +76,14 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           GRAFANA_ADMIN_USER: ${{ vars.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
         run: |
+          # Fail here, with a clear message, rather than deploying an app nobody can log in to
+          if [ -z "$ADMIN_PASSWORD" ]; then
+            echo "::error::Add an ADMIN_PASSWORD secret to the production environment (host login)"
+            exit 1
+          fi
           umask 077
           {
             printf 'DB_NAME=%s\n' "$DB_NAME"
@@ -84,6 +91,8 @@ jobs:
             printf 'DB_PASSWORD=%s\n' "$DB_PASSWORD"
             printf 'GRAFANA_ADMIN_USER=%s\n' "$GRAFANA_ADMIN_USER"
             printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$GRAFANA_ADMIN_PASSWORD"
+            printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"
+            printf 'PUBLIC_URL=%s\n' "$PUBLIC_URL"
           } > .env
 
       - name: Transfer deployment files
@@ -96,9 +105,12 @@ jobs:
             "$EC2_USER@$EC2_HOST" \
             "mkdir -p ~/photo-repo && chmod 700 ~/photo-repo"
 
+          # App + monitoring stack: compose files, Prometheus/Alertmanager/Grafana config,
+          # the Discord webhook (secrets/) and the deploy script
           scp -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=yes \
-            images.tar.gz compose.production.yaml .env \
+            -r images.tar.gz compose.production.yaml compose.monitoring.yaml .env \
+            monitoring secrets scripts \
             "$EC2_USER@$EC2_HOST:~/photo-repo/"
 
       - name: Deploy containers
@@ -109,32 +121,9 @@ jobs:
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
-            bash -se -- "$GITHUB_SHA" <<'REMOTE'
-          set -e
-
-          cd ~/photo-repo
-          chmod 600 .env
-          export IMAGE_TAG="$1"
-
-          docker load -i images.tar.gz
-
-          docker compose -p photo-repo \
-            -f compose.production.yaml \
-            up -d --no-build --pull never
-
-          for attempt in $(seq 1 20); do
-            if curl -fsS http://localhost:3001/health/ready; then
-              echo "Deployment successful"
-              exit 0
-            fi
-            sleep 3
-          done
-
-          echo "Deployment health check failed"
-          docker compose -p photo-repo \
-            -f compose.production.yaml logs --tail=50
-          exit 1
-          REMOTE
+            "chmod 600 ~/photo-repo/.env && bash ~/photo-repo/scripts/deploy.sh '$GITHUB_SHA'"
+          # deploy.sh starts app + monitoring, health-checks backend/database/frontend, and on
+          # failure rolls back to the last healthy release and fails this step
 
       - name: Clean up local deployment files
         if: always()
