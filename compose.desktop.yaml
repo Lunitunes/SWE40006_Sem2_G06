@@ -1,0 +1,10 @@
+# Docker Desktop (Windows/macOS) override. Layer it on top of the other two files:
+#   docker compose -f compose.yaml -f compose.monitoring.yaml -f compose.desktop.yaml up -d --build
+# or set COMPOSE_FILE in .env (see .env.example) and just run `docker compose up -d --build`.
+services:
+  node-exporter:
+    # Docker Desktop rejects the rslave mount option used on Linux. Without it, node-exporter runs and
+    # reports Docker Desktop's Linux VM (CPU, memory, disk, network), not Windows/macOS itself.
+    # Compose merges volumes by container path, so this replaces the /host mount from compose.monitoring.yaml.
+    volumes:
+      - /:/host:ro

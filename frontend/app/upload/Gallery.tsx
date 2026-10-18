@@ -9,28 +9,27 @@ interface PhotoItem {
   uploaded_at: string;
 }
 
-export default function Gallery() {
+// refreshKey changes after each upload, which re-runs the fetch below
+export default function Gallery({ refreshKey = 0 }: { refreshKey?: number }) {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Fetch the photo details array when the component mounts on screen
+  // Fetch the photo details array on mount, and again whenever refreshKey changes
   useEffect(() => {
-    fetchPhotos();
-  }, []);
-
-  const fetchPhotos = async () => {
-    try {
-      const response = await fetch('/api/backend/upload/all');
-      if (response.ok) {
-        const data = await response.json();
-        setPhotos(data);
-      }
-    } catch (error) {
-      console.error('Error fetching gallery metadata:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    let cancelled = false;
+    fetch('/api/backend/upload/all')
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+      .then((data: PhotoItem[]) => {
+        if (!cancelled) setPhotos(data);
+      })
+      .catch((error) => console.error('Error fetching gallery metadata:', error))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
 
   if (loading) return <div style={{ textAlign: 'center', marginTop: '20px' }}>Loading gallery...</div>;
 

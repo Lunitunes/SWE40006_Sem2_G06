@@ -5,9 +5,11 @@ Prometheus scrapes the backend and host every 15 seconds, Grafana shows the resu
 ## Running it
 
 ```sh
-cp .env.example .env          # set GRAFANA_ADMIN_PASSWORD
-docker compose -f compose.yaml -f compose.monitoring.yaml up -d --build
+cp .env.example .env          # set the passwords, and COMPOSE_FILE for your machine
+docker compose up -d --build
 ```
+
+`COMPOSE_FILE` in `.env` decides which compose files are combined; see the main [README](../README.md#2-configure).
 
 | Service      | URL                    | Notes                                         |
 | ------------ | ---------------------- | --------------------------------------------- |
@@ -18,7 +20,7 @@ docker compose -f compose.yaml -f compose.monitoring.yaml up -d --build
 
 Prometheus and Alertmanager only read their config at startup. After editing rules or `alertmanager.yml` on a running stack, reload them with `curl -X POST http://localhost:9090/-/reload` and `curl -X POST http://localhost:9093/-/reload`.
 
-`node-exporter` needs a Linux host, such as the production EC2 instance. It won't start under Docker Desktop on Windows or macOS, but the rest of the stack still runs.
+On Docker Desktop (Windows/macOS), `node-exporter` needs the `compose.desktop.yaml` override, because Docker Desktop rejects the `rslave` mount option used on Linux. With it, node-exporter reports Docker Desktop's Linux VM rather than the Windows/macOS host. On EC2 it reports the server itself.
 
 ## What is collected
 

@@ -4,12 +4,12 @@ on:
   push:
     paths:
       - 'monitoring/**'
-      - 'compose.monitoring.yaml'
+      - 'compose*.yaml'
       - '.github/workflows/monitoring-ci.yaml'
   pull_request:
     paths:
       - 'monitoring/**'
-      - 'compose.monitoring.yaml'
+      - 'compose*.yaml'
       - '.github/workflows/monitoring-ci.yaml'
 
 permissions:
@@ -42,6 +42,9 @@ jobs:
         run: jq empty monitoring/grafana/dashboards/*.json
 
       - name: Check compose files
-        run: docker compose -f compose.yaml -f compose.monitoring.yaml config --quiet
+        run: |
+          docker compose -f compose.yaml -f compose.monitoring.yaml config --quiet
+          docker compose -f compose.yaml -f compose.monitoring.yaml -f compose.desktop.yaml config --quiet
         env:
           GRAFANA_ADMIN_PASSWORD: ci-placeholder
+          DB_PASSWORD: ci-placeholder

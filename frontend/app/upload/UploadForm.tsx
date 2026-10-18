@@ -2,7 +2,7 @@
 
 import React, { useState, ChangeEvent, FormEvent } from 'react';
 
-export default function UploadForm() {
+export default function UploadForm({ onUploaded }: { onUploaded?: () => void }) {
   const [photo, setPhoto] = useState<File | null>(null);
   const [description, setDescription] = useState<string>('');
   const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' | 'loading' | null }>({
@@ -44,6 +44,7 @@ export default function UploadForm() {
         setPhoto(null);
         setDescription('');
         (e.target as HTMLFormElement).reset();
+        onUploaded?.();
       } else if (response.status === 413) {
         setStatus({ message: 'That photo is too large. The limit is 10 MB.', type: 'error' });
       } else {

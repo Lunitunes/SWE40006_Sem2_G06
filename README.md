@@ -30,23 +30,21 @@ cp .env.example .env
 
 Edit `.env` and set `GRAFANA_ADMIN_PASSWORD` and `DB_PASSWORD`. Any values work locally. `.env` is gitignored, so never commit it.
 
+`.env` also sets `COMPOSE_FILE`, which tells Docker Compose which compose files to combine, so the commands below don't need any `-f` flags. The example is set up for Docker Desktop on Windows and macOS. On a Linux server such as EC2, switch to the commented-out Linux line.
+
+| File | What it adds |
+| ---- | ------------ |
+| `compose.yaml` | The app: frontend, backend, postgres |
+| `compose.monitoring.yaml` | Prometheus, Alertmanager, Grafana, node-exporter |
+| `compose.desktop.yaml` | Docker Desktop only: a mount option node-exporter needs there (Docker Desktop rejects the Linux one) |
+
 ### 3. Run
 
-**Windows / macOS:**
-
 ```sh
-docker compose -f compose.yaml -f compose.monitoring.yaml up -d --build backend frontend postgres prometheus alertmanager grafana
+docker compose up -d --build
 ```
 
-**Linux (EC2):** the same command without the service list, which also starts `node-exporter` for host metrics:
-
-```sh
-docker compose -f compose.yaml -f compose.monitoring.yaml up -d --build
-```
-
-`node-exporter` only runs on Linux, so on Windows and macOS it's left out. The rest of the stack works without it.
-
-To run only the app without monitoring, use `docker compose up -d --build`.
+On Docker Desktop, the host CPU, memory, disk and network figures come from Docker Desktop's built-in Linux virtual machine, not from Windows or macOS itself. On EC2 they're the server's real figures.
 
 ### 4. Open
 
@@ -64,8 +62,8 @@ Prometheus and Alertmanager have no authentication, so they only accept connecti
 ### Stopping
 
 ```sh
-docker compose -f compose.yaml -f compose.monitoring.yaml down      # keeps photos and metrics
-docker compose -f compose.yaml -f compose.monitoring.yaml down -v   # also deletes all data
+docker compose down      # keeps photos and metrics
+docker compose down -v   # also deletes all data
 ```
 
 After pulling changes, rerun the start command; `--build` rebuilds what changed.
@@ -168,8 +166,9 @@ See [monitoring/README.md](monitoring/README.md) for how each success metric in 
 | `port 3000 is already allocated` | Another app, such as a local `next dev`, is using the port. Stop it and start again. |
 | `Set DB_PASSWORD in .env` / `Set GRAFANA_ADMIN_PASSWORD in .env` | `.env` is missing or incomplete; see [Configure](#2-configure). |
 | `docker` not recognised | Restart your terminal or VS Code after installing Docker. |
-| Grafana login fails | Grafana only reads the password from `.env` the first time it starts; changing `.env` later has no effect. Reset it with `docker compose -f compose.yaml -f compose.monitoring.yaml exec grafana grafana cli admin reset-admin-password <new-password>`. |
-| "node is down" alert on Windows or macOS | Expected: `node-exporter` only runs on Linux. |
+| Grafana login fails | Grafana only reads the password from `.env` the first time it starts; changing `.env` later has no effect. Reset it with `docker compose exec grafana grafana cli admin reset-admin-password <new-password>`. |
+| "node is down" alert, or node-exporter fails to start | `COMPOSE_FILE` in `.env` is wrong for your machine. On Docker Desktop it must include `compose.desktop.yaml`; see [Configure](#2-configure). |
+| `DiskSpaceLow` alert on Docker Desktop | It's real: Docker Desktop's virtual disk is filling up. `docker system prune` frees space. |
 | Upload fails with "Could not reach the backend" | Check `docker compose ps`. The backend waits for Postgres to be healthy before it starts. |
 | Changed alert rules aren't taking effect | Reload Prometheus and Alertmanager; see [monitoring/README.md](monitoring/README.md). |
 
