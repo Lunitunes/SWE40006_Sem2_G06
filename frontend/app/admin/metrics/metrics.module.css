@@ -16,7 +16,8 @@
   --status-warning: #fab219;
   --status-critical: #d03b3b;
 
-  min-height: 100vh;
+  /* Fills the space under the navbar (body is a flex column) */
+  flex: 1;
   padding: 24px 16px 48px;
   background: var(--page);
   color: var(--text-primary);

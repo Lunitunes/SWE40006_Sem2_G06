@@ -55,9 +55,11 @@ To run only the app without monitoring, use `docker compose up -d --build`.
 | Upload page and gallery | <http://localhost:3000/upload> |
 | Metrics dashboard | <http://localhost:3000/admin/metrics> |
 | Grafana | <http://localhost:3002>, logging in with the Grafana user and password from `.env` |
-| Prometheus | <http://localhost:9090> |
-| Alertmanager | <http://localhost:9093> |
+| Prometheus | <http://localhost:9090>, no login |
+| Alertmanager | <http://localhost:9093>, no login |
 | Backend readiness | <http://localhost:3001/health/ready> |
+
+Prometheus and Alertmanager have no authentication, so they only accept connections from the machine they run on. On EC2, reach them through an SSH tunnel: `ssh -L 9090:localhost:9090 -L 9093:localhost:9093 <server>`. Grafana is the only tool with a login. These ops tools are deliberately left out of the app's navbar, which guests see.
 
 ### Stopping
 
@@ -166,6 +168,7 @@ See [monitoring/README.md](monitoring/README.md) for how each success metric in 
 | `port 3000 is already allocated` | Another app, such as a local `next dev`, is using the port. Stop it and start again. |
 | `Set DB_PASSWORD in .env` / `Set GRAFANA_ADMIN_PASSWORD in .env` | `.env` is missing or incomplete; see [Configure](#2-configure). |
 | `docker` not recognised | Restart your terminal or VS Code after installing Docker. |
+| Grafana login fails | Grafana only reads the password from `.env` the first time it starts; changing `.env` later has no effect. Reset it with `docker compose -f compose.yaml -f compose.monitoring.yaml exec grafana grafana cli admin reset-admin-password <new-password>`. |
 | "node is down" alert on Windows or macOS | Expected: `node-exporter` only runs on Linux. |
 | Upload fails with "Could not reach the backend" | Check `docker compose ps`. The backend waits for Postgres to be healthy before it starts. |
 | Changed alert rules aren't taking effect | Reload Prometheus and Alertmanager; see [monitoring/README.md](monitoring/README.md). |
