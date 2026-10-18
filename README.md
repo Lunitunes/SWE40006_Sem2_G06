@@ -211,6 +211,29 @@ The in-app dashboard at `/admin/metrics` and the Grafana dashboard both show thi
 
 See [monitoring/README.md](monitoring/README.md) for how each success metric in the project brief is met, and for how to connect alert notifications.
 
+## Deploying to EC2
+
+**Actions → Deployment → Run workflow** builds the images, copies them to the instance with the compose files, monitoring config and Discord webhook, and runs [scripts/deploy.sh](scripts/deploy.sh). If the release fails its health checks, the script rolls back to the last healthy release, and the workflow run fails. In a rehearsal, a broken release was replaced in 73 s (brief target: 120 s).
+
+### HTTPS
+
+The production stack puts [Caddy](caddy/Caddyfile) in front of the app. It gets a free Let's Encrypt certificate and renews it automatically. HTTPS is what lets phones use the in-page camera, and it makes the host login cookie `Secure`. Browsers block both over plain HTTP.
+
+There's no need to buy a domain: [sslip.io](https://sslip.io) turns the server's IP into a hostname, so `13.239.43.240` becomes `13-239-43-240.sslip.io`.
+
+One-time setup:
+
+1. **Elastic IP:** in EC2 → Elastic IPs, allocate one and associate it with the instance, so the IP (and therefore the hostname and certificate) survives restarts.
+2. **Security group inbound rules:** open **80** (Let's Encrypt checks the server over HTTP, and Caddy redirects HTTP to HTTPS) and **443** (HTTPS) to `0.0.0.0/0`. Once HTTPS works, port **3000** can be closed. Keep **22** (deploys) and, if you use Grafana, **3002**.
+3. **GitHub → Settings → Environments → production → Variables**, using the Elastic IP with dots replaced by dashes:
+   - `SITE_ADDRESS` = `13-239-43-240.sslip.io`
+   - `PUBLIC_URL` = `https://13-239-43-240.sslip.io` (the address in the QR codes)
+4. Run the **Deployment** workflow. The log should end with `HTTPS ok: https://13-239-43-240.sslip.io`.
+
+While `SITE_ADDRESS` is unset, Caddy serves plain HTTP on port 80, so a deploy never takes the site down before HTTPS is configured. The certificate is stored in the `caddy-data` volume, so redeploys don't request a new one.
+
+Tested locally: Caddy in front of the stack (with a self-signed certificate for `localhost`) served every page, redirected HTTP to HTTPS, set HSTS, issued a `Secure` login cookie, passed a 41 s slow upload, and passed the full Playwright suite over HTTPS, including the in-page camera tests.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -224,6 +247,7 @@ See [monitoring/README.md](monitoring/README.md) for how each success metric in 
 | Host login: "Too many failed attempts" | Wait a minute. Logins are blocked for a minute after 5 wrong passwords. |
 | Forgot the host password | It's `ADMIN_PASSWORD` in `.env`. Change it there and run `docker compose up -d backend`; this also logs out every host. |
 | Upload fails with "Could not reach the backend" | Check `docker compose ps`. The backend waits for Postgres to be healthy before it starts. |
+| HTTPS on EC2 not working (deploy log says "not answering yet") | Check that inbound ports 80 and 443 are open, that `SITE_ADDRESS` matches the instance's current public IP, then read `docker logs photo-repo-caddy-1` on the server for the Let's Encrypt error. |
 | Changed alert rules aren't taking effect | Reload Prometheus and Alertmanager; see [monitoring/README.md](monitoring/README.md). |
 
 ## Team

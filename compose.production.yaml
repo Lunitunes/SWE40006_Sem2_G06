@@ -29,6 +29,28 @@ services:
       - backend
     restart: unless-stopped
 
+  # HTTPS front door: gets and renews a Let's Encrypt certificate for SITE_ADDRESS and forwards
+  # to the frontend. HTTPS is what lets browsers use the in-page camera. See caddy/Caddyfile.
+  # Port 3000 above stays published so the site keeps working before 80/443 are opened; close
+  # 3000 in the EC2 security group once HTTPS works.
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      # e.g. 13-239-43-240.sslip.io; blank = plain HTTP on port 80, no certificate
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Keeps the certificate across deploys (Let's Encrypt limits how often one can be re-issued)
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
   postgres:
     image: postgres:17.6-alpine
     environment:
@@ -46,3 +68,5 @@ services:
 
 volumes:
   postgres-data:
+  caddy-data:
+  caddy-config:

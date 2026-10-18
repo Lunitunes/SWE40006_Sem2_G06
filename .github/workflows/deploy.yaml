@@ -78,6 +78,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          SITE_ADDRESS: ${{ vars.SITE_ADDRESS }}
         run: |
           # Fail here, with a clear message, rather than deploying an app nobody can log in to
           if [ -z "$ADMIN_PASSWORD" ]; then
@@ -93,6 +94,7 @@ jobs:
             printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$GRAFANA_ADMIN_PASSWORD"
             printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"
             printf 'PUBLIC_URL=%s\n' "$PUBLIC_URL"
+            printf 'SITE_ADDRESS=%s\n' "$SITE_ADDRESS"
           } > .env
 
       - name: Transfer deployment files
@@ -106,11 +108,11 @@ jobs:
             "mkdir -p ~/photo-repo && chmod 700 ~/photo-repo"
 
           # App + monitoring stack: compose files, Prometheus/Alertmanager/Grafana config,
-          # the Discord webhook (secrets/) and the deploy script
+          # the Discord webhook (secrets/), the HTTPS proxy config (caddy/) and the deploy script
           scp -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=yes \
             -r images.tar.gz compose.production.yaml compose.monitoring.yaml .env \
-            monitoring secrets scripts \
+            monitoring secrets scripts caddy \
             "$EC2_USER@$EC2_HOST:~/photo-repo/"
 
       - name: Deploy containers

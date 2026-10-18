@@ -1,0 +1,19 @@
+# HTTPS in front of the app on EC2 (see compose.production.yaml).
+#
+# SITE_ADDRESS is the public hostname, e.g. 13-239-43-240.sslip.io (sslip.io resolves that name to
+# 13.239.43.240, so no DNS setup is needed). For a real hostname, Caddy gets a Let's Encrypt
+# certificate on first start, renews it automatically, and redirects http:// to https://.
+# Needs inbound ports 80 (certificate check) and 443 (HTTPS) open.
+#
+# Unset, it falls back to ":80": plain HTTP, no certificate, so a deploy never breaks before the
+# hostname is configured.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# The app: Next.js frontend (which proxies API calls to the backend itself). Caddy sets
+	# X-Forwarded-Proto: https, so the backend marks the host login cookie Secure.
+	reverse_proxy frontend:3000
+
+	# Browsers remember to use HTTPS for this site from now on
+	header Strict-Transport-Security "max-age=31536000"
+}

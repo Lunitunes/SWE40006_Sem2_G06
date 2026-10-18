@@ -66,6 +66,21 @@ if healthy; then
   prune_images
   rm -f images.tar.gz
   log "deployment successful: $NEW_TAG is live"
+
+  # HTTPS through Caddy, when a hostname is configured. Only a warning: the release itself is
+  # healthy, and the first certificate can take a little while (or ports 80/443 may not be open yet)
+  site="$(grep -E '^SITE_ADDRESS=' .env 2>/dev/null | cut -d= -f2- || true)"
+  if [[ -n "$site" && "$site" != :* ]]; then
+    for _ in $(seq 1 15); do
+      if curl -fsS -o /dev/null --max-time 10 "https://$site/"; then
+        log "HTTPS ok: https://$site"
+        break
+      fi
+      sleep 4
+    done || true
+    curl -fsS -o /dev/null --max-time 10 "https://$site/" ||
+      log "WARNING: https://$site is not answering yet; check inbound ports 80/443 and 'docker logs photo-repo-caddy-1'"
+  fi
   exit 0
 fi
 

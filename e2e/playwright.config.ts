@@ -24,6 +24,8 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }], ['github']] : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL,
+    // For testing HTTPS locally with a self-signed certificate (e.g. Caddy's internal CA)
+    ignoreHTTPSErrors: !!process.env.E2E_IGNORE_HTTPS_ERRORS,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
