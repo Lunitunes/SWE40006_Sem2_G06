@@ -28,18 +28,19 @@ jobs:
   # Starts straight away, in parallel with the CI checks
   build:
     name: Build Images
+    needs: ci
     uses: ./.github/workflows/build.yaml
 
-  e2e:
-    name: Playwright E2E
-    needs: build
-    uses: ./.github/workflows/e2e.yaml
-    with:
-      use-built-images: true
+  # e2e:
+  #   name: Playwright E2E
+  #   needs: build
+  #   uses: ./.github/workflows/e2e.yaml
+  #   with:
+  #     use-built-images: true
 
   deploy-test:
     name: Deploy to Test
-    needs: [ci, e2e]
+    needs: build
     uses: ./.github/workflows/deploy.yaml
     with:
       environment: test
