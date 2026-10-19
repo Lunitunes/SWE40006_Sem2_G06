@@ -282,3 +282,4 @@ Tuesday 10:30am – 12:30pm, Group 06
 - Matthew Bailey – 102146171
 - Ari Fadida – 103433887
 - Josh Bakanursky – 102551610
+- Charlotte Federico - 105339482
