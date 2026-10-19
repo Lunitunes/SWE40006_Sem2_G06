@@ -61,11 +61,19 @@ Set-Content -NoNewline secrets\discord_webhook_url 'https://discord.com/api/webh
 printf '%s' 'https://discord.com/api/webhooks/…' > secrets/discord_webhook_url             # Linux / EC2
 ```
 
-**Send a test alert** to check it works. Alertmanager reads the file each time it sends, so no restart is needed:
-   ```sh
-   docker compose exec alertmanager sh -c "amtool alert add PhotoRepoTestAlert severity=info --annotation='summary=\"Test alert from Photo Repo\"' --annotation='description=\"If you can read this, Discord alerts are working.\"' --alertmanager.url=http://localhost:9093"
-   ```
-   The message should arrive within about 10 seconds.
+**Check alerts reach Discord** (on the EC2 instance, over SSH). Only alerts labelled `environment=production` are posted. Alerts added by hand don't pass through Prometheus, so the label has to be given explicitly:
+
+```sh
+cd ~/photo-repo
+grep DEPLOY_ENVIRONMENT .env                           # must say: DEPLOY_ENVIRONMENT=production
+docker exec photo-repo-prometheus-1 wget -qO- localhost:9090/api/v1/status/config | grep -o 'environment: [a-z]*'
+docker exec photo-repo-alertmanager-1 amtool alert add PhotoRepoTestAlert severity=info environment=production \
+  --annotation='summary="Test alert from Photo Repo"' \
+  --annotation='description="If you can read this, Discord alerts are working."' \
+  --alertmanager.url=http://localhost:9093
+```
+
+"🔴 PhotoRepoTestAlert (production)" should arrive within about 10 seconds. Without `environment=production`, the same alert goes to the `quiet` receiver and doesn't post, which is how laptops and CI stay silent. Alertmanager reads the webhook file each time it sends, so changing it needs no restart.
 
 If the file is missing or the webhook has been deleted in Discord, alerts still fire and show in Alertmanager and on the dashboards; Alertmanager just logs that it couldn't send them.
 

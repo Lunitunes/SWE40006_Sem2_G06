@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import LineChart from './LineChart';
-import { formatBytes, formatBytesRate, formatDuration, formatPct, formatRate, formatTime } from './format';
+import { formatAvailability, formatBytes, formatBytesRate, formatDuration, formatPct, formatRate, formatTime } from './format';
 import { RANGES, type MetricsResponse, type Point, type RangeKey } from './types';
 import styles from './metrics.module.css';
 
@@ -228,6 +228,16 @@ export default function MetricsDashboard() {
               note={stats!.p95Seconds != null ? 'Alert threshold 1 s' : 'No requests in the last 5 minutes'}
               status={latencyStatus}
               trend={s!.latencyP95}
+            />
+            <StatTile
+              label={`Availability (${data.range})`}
+              value={stats!.availabilityPct != null ? formatAvailability(stats!.availabilityPct) : '–'}
+              note={
+                stats!.lifetimeAvailabilityPct != null
+                  ? `Target ≥ 99% · lifetime ${formatAvailability(stats!.lifetimeAvailabilityPct)}`
+                  : 'Target ≥ 99%'
+              }
+              status={stats!.availabilityPct == null ? undefined : stats!.availabilityPct >= 99 ? 'good' : 'critical'}
             />
             <StatTile
               label="Backend memory"

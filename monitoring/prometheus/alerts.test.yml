@@ -113,3 +113,21 @@ tests:
             exp_annotations:
               summary: 'Disk / has less than 10% free space'
               description: 'Free photo storage is running out on / (/dev/root).'
+
+  # Availability (brief: > 99% uptime): the share of time the backend is up AND can reach the
+  # database. The same expression is used by the Grafana panels and the app's metrics page.
+  # One hour of 1-minute samples: the backend is down for minutes 30-31, and the database is
+  # unreachable for minute 32 (database_up only exists while the backend is up).
+  - interval: 1m
+    input_series:
+      - series: 'up{job="backend", instance="backend:3001"}'
+        values: '1x29 0 0 1x27'
+      - series: 'database_up{job="backend", instance="backend:3001"}'
+        values: '1x29 _ _ 0 1x26'
+    promql_expr_test:
+      - expr: 100 * avg(avg_over_time(((up{job="backend"} * on(instance, job) database_up) or up{job="backend"})[1h:1m]))
+        eval_time: 59m
+        exp_samples:
+          # 60 samples, 3 unavailable (2 backend down + 1 database unreachable): 57/60 = 95%
+          - labels: '{}'
+            value: 95

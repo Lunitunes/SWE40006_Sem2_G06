@@ -219,6 +219,8 @@ Seven alert rules cover:
 
 The in-app dashboard at `/admin/metrics` and the Grafana dashboard both show this data.
 
+**Availability** (brief: > 99% uptime) is measured, not just stated. The service counts as available when the backend is up **and** can reach the database: a running backend whose uploads all fail isn't "up". Availability is the share of Prometheus's 15-second checks where that was true. Grafana shows it for the last 24 hours, the last 7 days and the lifetime (since monitoring started, up to the 15-day retention), red below 99% and green at or above it. The app's Metrics page shows it for the selected range, plus the lifetime figure. The calculation is unit-tested in `monitoring/prometheus/alerts.test.yml`: a 2-minute backend outage plus a 1-minute database outage in an hour gives exactly 95%. It's measured from the server itself, so if the whole EC2 instance goes down, that time isn't recorded. An external uptime checker would be needed to cover that.
+
 Firing and resolved alerts from the **production server** are posted to the team's Discord channel, e.g. "🔴 ServiceDown (production)", then "✅ Resolved: ServiceDown (production): back to normal after 2m15s". In testing, a `ServiceDown` alert arrived 17.9 s after the backend stopped (brief target: 30 s).
 
 To keep alerts actionable (brief: > 99%), two kinds of noise are filtered out:

@@ -49,3 +49,9 @@ export function niceTicks(max: number): number[] {
   if (ticks[ticks.length - 1] < max) ticks.push(Number((ticks[ticks.length - 1] + step).toPrecision(12)));
   return ticks;
 }
+
+// Availability is rounded down, so 99.996% shows as 99.99%, never as a misleading "100.00%"
+export function formatAvailability(v: number): string {
+  if (v >= 100) return '100%';
+  return `${(Math.floor(v * 100) / 100).toFixed(2)}%`;
+}

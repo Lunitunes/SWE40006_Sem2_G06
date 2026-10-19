@@ -37,6 +37,9 @@ export type MetricsResponse = {
     errorPct: number | null;
     p95Seconds: number | null;
     memoryBytes: number | null;
+    // Brief: > 99% availability. Backend up AND database reachable, as a percentage of time
+    availabilityPct: number | null;
+    lifetimeAvailabilityPct: number | null;
   };
   series: {
     requestsSuccess: Point[];

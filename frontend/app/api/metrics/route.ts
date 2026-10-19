@@ -20,6 +20,10 @@ async function isHost(request: NextRequest): Promise<boolean> {
 export const dynamic = 'force-dynamic';
 
 const BACKEND = 'job="backend"';
+// Available = backend up AND database reachable (database_up only exists while the backend is up).
+// Same expression as the Grafana availability panels and the promtool test in alerts.test.yml.
+const AVAILABLE = `((up{${BACKEND}} * on(instance, job) database_up) or up{${BACKEND}})`;
+const availability = (range: string, step: string) => `100 * avg(avg_over_time(${AVAILABLE}[${range}:${step}]))`;
 const FS = 'fstype!~"tmpfs|overlay|squashfs|ramfs"';
 const NET = 'device!~"lo|veth.*|docker.*|br-.*"';
 
@@ -101,6 +105,8 @@ export async function GET(request: NextRequest) {
       routeErrors,
       routeP95,
       databaseUp,
+      availabilityPct,
+      lifetimeAvailabilityPct,
     ] = await Promise.all([
       prom('targets', { state: 'active' }),
       prom('alerts'),
@@ -127,6 +133,10 @@ export async function GET(request: NextRequest) {
         `histogram_quantile(0.95, sum by (method, route, le) (rate(http_request_duration_seconds_bucket{${BACKEND}}[${rangeSeconds}s])))`,
       ),
       scalar(`database_up{${BACKEND}}`),
+      // Over the selected range, sampled at the chart step (at least every 15s)
+      scalar(availability(`${rangeSeconds}s`, `${step}s`)),
+      // Since monitoring started, as far back as Prometheus keeps data (15 days)
+      scalar(availability('15d', '5m')),
     ]);
 
     const targets: Target[] = (
@@ -178,7 +188,7 @@ export async function GET(request: NextRequest) {
       stepSeconds: step,
       targets,
       alerts,
-      stats: { requestRate, errorPct: currentErrorPct, p95Seconds, memoryBytes },
+      stats: { requestRate, errorPct: currentErrorPct, p95Seconds, memoryBytes, availabilityPct, lifetimeAvailabilityPct },
       series: {
         requestsSuccess,
         requestsClientError,
