@@ -125,9 +125,26 @@ tests:
       - series: 'database_up{job="backend", instance="backend:3001"}'
         values: '1x29 _ _ 0 1x26'
     promql_expr_test:
-      - expr: 100 * avg(avg_over_time(((up{job="backend"} * on(instance, job) database_up) or up{job="backend"})[1h:1m]))
+      - expr: 100 * avg(avg_over_time(min by (instance, job) ((up{job="backend"} * on(instance, job) database_up) or up{job="backend"})[1h:1m]))
         eval_time: 59m
         exp_samples:
           # 60 samples, 3 unavailable (2 backend down + 1 database unreachable): 57/60 = 95%
           - labels: '{}'
             value: 95
+
+  # Regression (production returned HTTP 422): history from an older backend that didn't report
+  # database_up yet, followed by the current one. Without "min by (instance, job)" the two kinds of
+  # samples end up as clashing series ("vector cannot contain metrics with the same labelset").
+  # The backend is down for minutes 20-21 (old version); 58 of 60 minutes available = 96.67%.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="backend", instance="backend:3001"}'
+        values: '1x19 0 0 1x37'
+      - series: 'database_up{job="backend", instance="backend:3001"}'
+        values: '_x39 1x19'
+    promql_expr_test:
+      - expr: 100 * avg(avg_over_time(min by (instance, job) ((up{job="backend"} * on(instance, job) database_up) or up{job="backend"})[1h:1m]))
+        eval_time: 59m
+        exp_samples:
+          - labels: '{}'
+            value: 96.66666666666667

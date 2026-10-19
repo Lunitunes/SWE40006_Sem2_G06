@@ -22,7 +22,10 @@ export const dynamic = 'force-dynamic';
 const BACKEND = 'job="backend"';
 // Available = backend up AND database reachable (database_up only exists while the backend is up).
 // Same expression as the Grafana availability panels and the promtool test in alerts.test.yml.
-const AVAILABLE = `((up{${BACKEND}} * on(instance, job) database_up) or up{${BACKEND}})`;
+// min by (instance, job) keeps the labels identical whichever branch matched; without it, history
+// from before database_up existed makes Prometheus fail with "vector cannot contain metrics with
+// the same labelset" (HTTP 422)
+const AVAILABLE = `min by (instance, job) ((up{${BACKEND}} * on(instance, job) database_up) or up{${BACKEND}})`;
 const availability = (range: string, step: string) => `100 * avg(avg_over_time(${AVAILABLE}[${range}:${step}]))`;
 const FS = 'fstype!~"tmpfs|overlay|squashfs|ramfs"';
 const NET = 'device!~"lo|veth.*|docker.*|br-.*"';
@@ -33,9 +36,12 @@ async function prom(path: string, params: Record<string, string> = {}): Promise<
   const url = new URL(`/api/v1/${path}`, PROMETHEUS_URL);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
-  if (!res.ok) throw new Error(`Prometheus ${path} returned ${res.status}`);
-  const body = await res.json();
-  if (body.status !== 'success') throw new Error(body.error ?? `Prometheus ${path} failed`);
+  // Prometheus explains failed queries in the body (e.g. 422 "vector cannot contain metrics with
+  // the same labelset"), so pass that on rather than just the status code
+  const body = await res.json().catch(() => null);
+  if (!res.ok || body?.status !== 'success') {
+    throw new Error(`Prometheus ${path} returned ${res.status}${body?.error ? `: ${body.error}` : ''}`);
+  }
   return body.data;
 }
 

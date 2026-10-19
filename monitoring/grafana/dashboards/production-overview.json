@@ -290,7 +290,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * avg(avg_over_time(((up{job=\"backend\"} * on(instance, job) database_up) or up{job=\"backend\"})[24h:1m]))",
+          "expr": "100 * avg(avg_over_time(min by (instance, job) ((up{job=\"backend\"} * on(instance, job) database_up) or up{job=\"backend\"})[24h:1m]))",
           "instant": true
         }
       ],
@@ -349,7 +349,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * avg(avg_over_time(((up{job=\"backend\"} * on(instance, job) database_up) or up{job=\"backend\"})[7d:5m]))",
+          "expr": "100 * avg(avg_over_time(min by (instance, job) ((up{job=\"backend\"} * on(instance, job) database_up) or up{job=\"backend\"})[7d:5m]))",
           "instant": true
         }
       ],
@@ -408,7 +408,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * avg(avg_over_time(((up{job=\"backend\"} * on(instance, job) database_up) or up{job=\"backend\"})[15d:5m]))",
+          "expr": "100 * avg(avg_over_time(min by (instance, job) ((up{job=\"backend\"} * on(instance, job) database_up) or up{job=\"backend\"})[15d:5m]))",
           "instant": true
         }
       ],
