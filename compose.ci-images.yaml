@@ -1,0 +1,8 @@
+# CI only: run the images built by .github/workflows/build.yaml (the exact ones that get
+# deployed) instead of building from source again. Layered on compose.yaml:
+#   IMAGE_TAG=<commit sha> docker compose -f compose.yaml -f compose.monitoring.yaml -f compose.ci-images.yaml up -d --no-build
+services:
+  backend:
+    image: photo-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+  frontend:
+    image: photo-frontend:${IMAGE_TAG:?IMAGE_TAG is required}

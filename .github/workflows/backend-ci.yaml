@@ -1,16 +1,16 @@
 name: Backend CI
 
 on:
+  # Run by pipeline.yaml (pushes to main) and ci.yaml (pull requests). No triggers of its own:
+  # those made it run a second time on every push and PR.
   workflow_call:
-  push:
-  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # Real PostgreSQL for the upload E2E tests (throwaway, so the credentials don't need to be secret)
     services:
@@ -41,15 +41,15 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 11.21.0
 

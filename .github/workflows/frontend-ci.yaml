@@ -2,9 +2,9 @@
 name: Frontend CI
 
 on:
+  # Run by pipeline.yaml (pushes to main) and ci.yaml (pull requests). No triggers of its own:
+  # those made it run a second time on every push and PR.
   workflow_call:
-  push:
-  pull_request:
 
 permissions:
   contents: read
@@ -12,7 +12,7 @@ permissions:
 jobs:
   test:
     name: Validate Frontend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     defaults:
       run:
@@ -20,15 +20,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 11.21.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm

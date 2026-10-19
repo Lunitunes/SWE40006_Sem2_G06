@@ -1,6 +1,11 @@
-
 name: CI/CD Pipeline
 
+# Push to main:
+#   CI checks ─┐
+#   Build ─► E2E (those images) ─┴─► Deploy to test ─► Staging tests (full suite) ─► Deploy to production
+#
+# Build once, test what you deploy: the images are built once, tested end-to-end, then deployed
+# to test and production unchanged.
 on:
   push:
     branches:
@@ -12,33 +17,89 @@ permissions:
   actions: read
 
 jobs:
+  # Backend, frontend and monitoring checks. E2E runs below instead, against the built images.
   ci:
     name: Run CI
     uses: ./.github/workflows/ci.yaml
+    with:
+      include-e2e: false
 
+  # Starts straight away, in parallel with the CI checks
   build:
     name: Build Images
-    needs: ci
     uses: ./.github/workflows/build.yaml
+
+  e2e:
+    name: Playwright E2E
+    needs: build
+    uses: ./.github/workflows/e2e.yaml
+    with:
+      use-built-images: true
 
   deploy-test:
     name: Deploy to Test
-    needs: build
+    needs: [ci, e2e]
     uses: ./.github/workflows/deploy.yaml
     with:
       environment: test
     secrets: inherit
 
+  # Brief: "perform a comprehensive test suite on the Test/Staging server". The same Playwright
+  # suite as CI, run against the deployed test server; it creates and deletes its own test events.
   staging-tests:
     name: Staging Tests
     needs: deploy-test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # For the test server's ADMIN_PASSWORD secret (host login used by the tests)
+    environment: test
+    env:
+      TEST_URL: ${{ vars.TEST_URL }}
+      E2E_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
 
     steps:
-      - name: Check deployed application
+      - name: Check the test server is up
         run: |
-          curl --fail --show-error \
-            "${{ vars.TEST_URL }}"
+          if [ -z "$TEST_URL" ]; then echo "::error::Set the TEST_URL variable (the test server's address)"; exit 1; fi
+          curl --fail --show-error --silent --output /dev/null "$TEST_URL"
+          echo "$TEST_URL is up"
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 11.21.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: e2e/pnpm-lock.yaml
+
+      - name: Install Playwright and Chromium
+        working-directory: e2e
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Run the E2E suite against the test server
+        working-directory: e2e
+        run: |
+          # Playwright wants the bare address, without a trailing slash
+          BASE_URL="${TEST_URL%/}" pnpm test
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: staging-playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
 
   deploy-production:
     name: Deploy to Production

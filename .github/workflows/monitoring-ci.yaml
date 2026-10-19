@@ -1,20 +1,20 @@
 name: Monitoring CI
 
 on:
+  # Run by pipeline.yaml (pushes to main) and ci.yaml (pull requests). No triggers of its own:
+  # those made it run a second time on every push and PR.
   workflow_call:
-  push:
-  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check Prometheus config
         run: >

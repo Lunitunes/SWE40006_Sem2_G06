@@ -3,6 +3,13 @@ name: CI
 
 on:
   workflow_call:
+    inputs:
+      include-e2e:
+        description: >-
+          Run the Playwright suite here. The pipeline sets this to false and runs it separately,
+          against the images it built for deployment.
+        type: boolean
+        default: true
   pull_request:
     branches:
       - main
@@ -22,6 +29,8 @@ jobs:
 
   e2e:
     name: Playwright E2E
+    # Pull requests have no inputs (null), so they always include it
+    if: ${{ inputs.include-e2e != false }}
     uses: ./.github/workflows/e2e.yaml
 
   monitoring:

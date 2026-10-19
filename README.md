@@ -195,15 +195,30 @@ DB_HOST=127.0.0.1 DB_PORT=55432 DB_NAME=photorepo_test DB_USER=photorepo DB_PASS
 docker stop photorepo-test-db
 ```
 
-## CI
+## CI/CD
 
-| Workflow | Runs on | What it does |
-| -------- | ------- | ------------ |
-| [Backend CI](.github/workflows/backend-ci.yaml) | Every push and pull request | Unit tests, API integration tests against a real PostgreSQL, build |
-| [Frontend CI](.github/workflows/frontend-ci.yaml) | Pushes and PRs to `main`/`develop` that change the frontend | Lint and production build |
-| [E2E Tests](.github/workflows/e2e.yaml) | Changes to the app, tests or compose files | Starts the app and monitoring in fresh containers, then runs the Playwright suite in Chromium. On failure it uploads screenshots and traces |
-| [Deployment](.github/workflows/deploy.yaml) | Manual (Actions → Deployment → Run workflow) | Builds images, copies them to EC2 and runs `scripts/deploy.sh`, which health-checks the release and rolls back automatically if it fails |
-| [Monitoring CI](.github/workflows/monitoring-ci.yaml) | Changes to monitoring files | Validates the Prometheus, Alertmanager, Grafana and Compose config, and runs the alert-rule unit tests |
+A **push to `main`** runs [pipeline.yaml](.github/workflows/pipeline.yaml):
+
+```text
+CI checks (backend, frontend, monitoring) ─┐
+Build images ──► E2E against those images ─┴─► Deploy to test ──► Staging tests ──► Deploy to production
+```
+
+- **Build once, test what you deploy.** The images are built once, at the start, in parallel with the CI checks. The Playwright suite runs against *those* images, and the same images are then deployed to test and production unchanged.
+- **Staging tests** run the full Playwright suite against the deployed test server (`TEST_URL`), logging in with the test environment's `ADMIN_PASSWORD`. Production is only deployed if they pass. The suite creates and deletes its own test events.
+
+**Pull requests** to `main` or `develop` run the four CI checks only, via [ci.yaml](.github/workflows/ci.yaml). The workflows below are building blocks: they run only when the pipeline or `ci.yaml` calls them, so each runs once per push or PR.
+
+| Workflow | What it does |
+| -------- | ------------ |
+| [Backend CI](.github/workflows/backend-ci.yaml) | Unit tests, API integration tests against a real PostgreSQL, build |
+| [Frontend CI](.github/workflows/frontend-ci.yaml) | Lint and production build |
+| [E2E Tests](.github/workflows/e2e.yaml) | Starts the app and monitoring in fresh containers, then runs the Playwright suite in Chromium. In the pipeline it uses the built images (`compose.ci-images.yaml`); on PRs it builds them. Playwright installs while the app starts. On failure it uploads screenshots and traces |
+| [Monitoring CI](.github/workflows/monitoring-ci.yaml) | Validates the Prometheus, Alertmanager, Grafana and Compose config, and runs the alert-rule and availability unit tests |
+| [Build](.github/workflows/build.yaml) | Builds the backend and frontend images once, tagged with the commit, for E2E and both deploys |
+| [Deploy](.github/workflows/deploy.yaml) | Copies the images to an environment's EC2 and runs `scripts/deploy.sh`, which health-checks the release and rolls back automatically if it fails |
+
+Runners are pinned to `ubuntu-24.04`, and every action is on a Node 24 version.
 
 ## Monitoring
 
