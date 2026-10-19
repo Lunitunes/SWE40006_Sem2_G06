@@ -2,52 +2,16 @@
 name: Deployment
 
 on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
 
 jobs:
-  build-images:
-    name: Build Docker Images
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build backend image
-        run: |
-          docker build \
-            -t photo-backend:${{ github.sha }} \
-            ./backend
-
-      - name: Build frontend image
-        run: |
-          docker build \
-            -t photo-frontend:${{ github.sha }} \
-            ./frontend
-
-      - name: Package Docker images
-        run: |
-          docker save \
-            photo-backend:${{ github.sha }} \
-            photo-frontend:${{ github.sha }} \
-            | gzip > images.tar.gz
-
-      - name: Upload deployment artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: deployment-images
-          path: images.tar.gz
-          retention-days: 1
-          if-no-files-found: error
-
   deploy:
-    name: Deploy to EC2
-    needs: build-images
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout repository
@@ -64,76 +28,63 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
           chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
 
-      - name: Create deployment environment file
+      - name: Create environment file
         env:
           DB_NAME: ${{ vars.DB_NAME }}
           DB_USER: ${{ vars.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           GRAFANA_ADMIN_USER: ${{ vars.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           PUBLIC_URL: ${{ vars.PUBLIC_URL }}
           SITE_ADDRESS: ${{ vars.SITE_ADDRESS }}
+          DEPLOY_ENV: ${{ inputs.environment }}
         run: |
-          # Fail here, with a clear message, rather than deploying an app nobody can log in to
-          if [ -z "$ADMIN_PASSWORD" ]; then
-            echo "::error::Add an ADMIN_PASSWORD secret to the production environment (host login)"
-            exit 1
-          fi
           umask 077
-          {
-            printf 'DB_NAME=%s\n' "$DB_NAME"
-            printf 'DB_USER=%s\n' "$DB_USER"
-            printf 'DB_PASSWORD=%s\n' "$DB_PASSWORD"
-            printf 'GRAFANA_ADMIN_USER=%s\n' "$GRAFANA_ADMIN_USER"
-            printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$GRAFANA_ADMIN_PASSWORD"
-            printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"
-            printf 'PUBLIC_URL=%s\n' "$PUBLIC_URL"
-            printf 'SITE_ADDRESS=%s\n' "$SITE_ADDRESS"
-            # Alerts from this server are the only ones posted to the team's Discord
-            printf 'DEPLOY_ENVIRONMENT=production\n'
-            # Grafana over HTTPS on a subdomain of the site (sslip.io resolves any subdomain)
-            if [ -n "$SITE_ADDRESS" ]; then
-              printf 'GRAFANA_ADDRESS=grafana.%s\n' "$SITE_ADDRESS"
-              printf 'GRAFANA_ROOT_URL=https://grafana.%s\n' "$SITE_ADDRESS"
-            fi
-          } > .env
+          cat > .env <<EOF
+          DB_NAME=$DB_NAME
+          DB_USER=$DB_USER
+          DB_PASSWORD=$DB_PASSWORD
+          ADMIN_PASSWORD=$ADMIN_PASSWORD
+          GRAFANA_ADMIN_USER=$GRAFANA_ADMIN_USER
+          GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD
+          PUBLIC_URL=$PUBLIC_URL
+          SITE_ADDRESS=$SITE_ADDRESS
+          DEPLOY_ENVIRONMENT=$DEPLOY_ENV
+          GRAFANA_ADDRESS=grafana.$SITE_ADDRESS
+          GRAFANA_ROOT_URL=https://grafana.$SITE_ADDRESS
+          EOF
 
-      - name: Transfer deployment files
+      - name: Transfer files to EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
-            "mkdir -p ~/photo-repo && chmod 700 ~/photo-repo"
+            "mkdir -p ~/photo-repo"
 
-          # App + monitoring stack: compose files, Prometheus/Alertmanager/Grafana config,
-          # the Discord webhook (secrets/), the HTTPS proxy config (caddy/) and the deploy script
-          scp -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=yes \
-            -r images.tar.gz compose.production.yaml compose.monitoring.yaml .env \
-            monitoring secrets scripts caddy \
+          scp -i ~/.ssh/deploy_key -r \
+            images.tar.gz \
+            compose.production.yaml \
+            compose.monitoring.yaml \
+            .env monitoring secrets scripts caddy \
             "$EC2_USER@$EC2_HOST:~/photo-repo/"
 
-      - name: Deploy containers
+      - name: Deploy application
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
             "chmod 600 ~/photo-repo/.env && bash ~/photo-repo/scripts/deploy.sh '$GITHUB_SHA'"
-          # deploy.sh starts app + monitoring, health-checks backend/database/frontend, and on
-          # failure rolls back to the last healthy release and fails this step
 
-      - name: Clean up local deployment files
+      - name: Cleanup
         if: always()
         run: rm -f .env ~/.ssh/deploy_key
