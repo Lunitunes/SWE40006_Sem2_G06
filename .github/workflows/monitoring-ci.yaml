@@ -1,16 +1,9 @@
 name: Monitoring CI
 
 on:
+  workflow_call:
   push:
-    paths:
-      - 'monitoring/**'
-      - 'compose*.yaml'
-      - '.github/workflows/monitoring-ci.yaml'
   pull_request:
-    paths:
-      - 'monitoring/**'
-      - 'compose*.yaml'
-      - '.github/workflows/monitoring-ci.yaml'
 
 permissions:
   contents: read

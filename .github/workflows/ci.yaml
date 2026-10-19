@@ -13,21 +13,17 @@ permissions:
 
 jobs:
   backend:
-    name: Backend Tests
-    runs-on: ubuntu-latest
-    # Existing backend CI steps and PostgreSQL service
+    name: Backend CI
+    uses: ./.github/workflows/backend-ci.yaml
 
   frontend:
-    name: Frontend Tests
-    runs-on: ubuntu-latest
-    # Existing frontend lint and build steps
+    name: Frontend CI
+    uses: ./.github/workflows/frontend-ci.yaml
 
   e2e:
     name: Playwright E2E
-    runs-on: ubuntu-latest
-    # Existing Playwright and Docker Compose steps
+    uses: ./.github/workflows/e2e.yaml
 
   monitoring:
-    name: Monitoring Validation
-    runs-on: ubuntu-latest
-    # Existing monitoring validation steps
+    name: Monitoring CI
+    uses: ./.github/workflows/monitoring-ci.yaml

@@ -3,24 +3,9 @@ name: E2E Tests
 # End-to-end acceptance tests (brief: "end-to-end acceptance testing of a complete user journey"):
 # start the whole app in fresh containers, then drive it in a real browser with Playwright
 on:
+  workflow_call:
   push:
-    paths:
-      - 'frontend/**'
-      - 'backend/**'
-      - 'e2e/**'
-      - 'compose.yaml'
-      - 'compose.monitoring.yaml'
-      - 'monitoring/**'
-      - '.github/workflows/e2e.yaml'
   pull_request:
-    paths:
-      - 'frontend/**'
-      - 'backend/**'
-      - 'e2e/**'
-      - 'compose.yaml'
-      - 'compose.monitoring.yaml'
-      - 'monitoring/**'
-      - '.github/workflows/e2e.yaml'
 
 permissions:
   contents: read
