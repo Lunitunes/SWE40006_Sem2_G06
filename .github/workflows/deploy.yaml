@@ -17,10 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Download Docker images
-        uses: actions/download-artifact@v7
-        with:
-          name: deployment-images
+      
 
       - name: Configure SSH
         env:
@@ -68,13 +65,27 @@ jobs:
           ssh -i ~/.ssh/deploy_key \
             "$EC2_USER@$EC2_HOST" \
             "mkdir -p ~/photo-repo"
-
           scp -i ~/.ssh/deploy_key -r \
-            images.tar.gz \
-            compose.production.yaml \
-            compose.monitoring.yaml \
-            .env monitoring secrets scripts caddy \
-            "$EC2_USER@$EC2_HOST:~/photo-repo/"
+          compose.production.yaml \
+          compose.monitoring.yaml \
+          .env monitoring secrets scripts caddy \
+          "$EC2_USER@$EC2_HOST:~/photo-repo/"
+
+      - name: Authenticate EC2 with GHCR
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          if [ -z "$GHCR_TOKEN" ]; then
+            echo "::error::GHCR_TOKEN is not configured"
+            exit 1
+          fi
+
+          printf '%s' "$GHCR_TOKEN" | \
+            ssh -i ~/.ssh/deploy_key \
+            "$EC2_USER@$EC2_HOST" \
+            'docker login ghcr.io -u Lunitunes --password-stdin'
 
       - name: Deploy application
         env:

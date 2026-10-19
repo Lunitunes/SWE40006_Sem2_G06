@@ -64,17 +64,23 @@ healthy() {
 # Keep the current and previous images for rollback; delete older ones so the disk doesn't fill up
 prune_images() {
   local keep=("$NEW_TAG" "$PREVIOUS_TAG")
-  for repo in photo-backend photo-frontend; do
+
+  for repo in \
+    ghcr.io/lunitunes/photo-backend \
+    ghcr.io/lunitunes/photo-frontend
+  do
     docker image ls "$repo" --format '{{.Tag}}' | while read -r tag; do
-      [[ " ${keep[*]} " == *" $tag "* ]] || docker image rm -f "$repo:$tag" >/dev/null 2>&1 || true
+      [[ " ${keep[*]} " == *" $tag " ]] ||
+        docker image rm "$repo:$tag" >/dev/null 2>&1 || true
     done
   done
 }
 
-if [[ -f images.tar.gz ]]; then
-  log "loading images"
-  docker load -i images.tar.gz
-fi
+log "pulling images for $NEW_TAG from GHCR"
+
+"${COMPOSE[@]}" pull backend frontend
+
+log "images downloaded successfully"
 
 log "deploying $NEW_TAG (previous stable: ${PREVIOUS_TAG:-none})"
 mute_alerts
@@ -87,7 +93,6 @@ if healthy; then
   curl -fsS -X POST http://localhost:9090/-/reload >/dev/null && log "prometheus config reloaded" || log "prometheus reload skipped"
   curl -fsS -X POST http://localhost:9093/-/reload >/dev/null && log "alertmanager config reloaded" || log "alertmanager reload skipped"
   prune_images
-  rm -f images.tar.gz
   log "deployment successful: $NEW_TAG is live"
 
   # HTTPS through Caddy, when a hostname is configured. Only a warning: the release itself is

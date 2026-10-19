@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   actions: read
+  packages: write
 
 jobs:
   # Backend, frontend and monitoring checks. E2E runs below instead, against the built images.

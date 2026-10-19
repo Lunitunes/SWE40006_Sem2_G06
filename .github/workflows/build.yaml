@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build:
@@ -16,29 +17,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build backend image
         run: |
           docker build \
-            -t photo-backend:${{ github.sha }} \
+            -t ghcr.io/lunitunes/photo-backend:${{ github.sha }} \
             ./backend
 
       - name: Build frontend image
         run: |
           docker build \
-            -t photo-frontend:${{ github.sha }} \
+            -t ghcr.io/lunitunes/photo-frontend:${{ github.sha }} \
             ./frontend
 
-      - name: Package Docker images
+      - name: Push Docker images to GHCR
         run: |
-          docker save \
-            photo-backend:${{ github.sha }} \
-            photo-frontend:${{ github.sha }} \
-            | gzip > images.tar.gz
-
-      - name: Upload deployment artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: deployment-images
-          path: images.tar.gz
-          retention-days: 1
-          if-no-files-found: error
+          docker push ghcr.io/lunitunes/photo-backend:${{ github.sha }}
+          docker push ghcr.io/lunitunes/photo-frontend:${{ github.sha }}

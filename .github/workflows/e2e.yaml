@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   e2e:
@@ -54,11 +55,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: e2e/pnpm-lock.yaml
 
-      - name: Download the images built for deployment
+      - name: Log in to GHCR
         if: inputs.use-built-images
-        uses: actions/download-artifact@v7
+        uses: docker/login-action@v3
         with:
-          name: deployment-images
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Clean-slate containers every run (brief: < 1% flake rate), so failures mean real bugs.
       # Starting the app (building or loading its images) is the slowest part of this job and
@@ -69,8 +72,10 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           if [ "$USE_BUILT_IMAGES" = "true" ]; then
-            # Build once, test what you deploy: the images from build.yaml, tagged with this commit
-            start_app() { docker load -i images.tar.gz && $COMPOSE -f compose.ci-images.yaml up -d --no-build; }
+            start_app() {
+              $COMPOSE -f compose.ci-images.yaml pull backend frontend
+              $COMPOSE -f compose.ci-images.yaml up -d --no-build
+            }
           else
             start_app() { $COMPOSE up -d --build; }
           fi

@@ -3,6 +3,7 @@
 #   IMAGE_TAG=<commit sha> docker compose -f compose.yaml -f compose.monitoring.yaml -f compose.ci-images.yaml up -d --no-build
 services:
   backend:
-    image: photo-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ghcr.io/lunitunes/photo-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+
   frontend:
-    image: photo-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ghcr.io/lunitunes/photo-frontend:${IMAGE_TAG:?IMAGE_TAG is required}

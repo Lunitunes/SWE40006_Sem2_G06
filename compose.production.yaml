@@ -1,7 +1,7 @@
 
 services:
   backend:
-    image: photo-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ghcr.io/lunitunes/photo-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: photo-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ghcr.io/lunitunes/photo-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
       BACKEND_URL: http://backend:3001
       # Address the event QR codes point to (e.g. http://<ec2-public-ip>:3000); blank = the browser's address
