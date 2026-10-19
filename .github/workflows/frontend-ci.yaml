@@ -2,21 +2,9 @@
 name: Frontend CI
 
 on:
+  workflow_call:
   push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-ci.yaml'
-
   pull_request:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-ci.yaml'
 
 permissions:
   contents: read

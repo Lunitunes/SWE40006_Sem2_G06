@@ -1,0 +1,49 @@
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  ci:
+    name: Run CI
+    uses: ./.github/workflows/ci.yaml
+
+  build:
+    name: Build Images
+    needs: ci
+    uses: ./.github/workflows/build.yaml
+
+  deploy-test:
+    name: Deploy to Test
+    needs: build
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      environment: test
+    secrets: inherit
+
+  staging-tests:
+    name: Staging Tests
+    needs: deploy-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check deployed application
+        run: |
+          curl --fail --show-error \
+            "${{ vars.TEST_URL }}"
+
+  deploy-production:
+    name: Deploy to Production
+    needs: staging-tests
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      environment: production
+    secrets: inherit
