@@ -95,6 +95,8 @@ jobs:
             printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"
             printf 'PUBLIC_URL=%s\n' "$PUBLIC_URL"
             printf 'SITE_ADDRESS=%s\n' "$SITE_ADDRESS"
+            # Alerts from this server are the only ones posted to the team's Discord
+            printf 'DEPLOY_ENVIRONMENT=production\n'
             # Grafana over HTTPS on a subdomain of the site (sslip.io resolves any subdomain)
             if [ -n "$SITE_ADDRESS" ]; then
               printf 'GRAFANA_ADDRESS=grafana.%s\n' "$SITE_ADDRESS"

@@ -1,12 +1,21 @@
 route:
-  receiver: devops
+  # Default: no notification. Alerts still show in Alertmanager, Grafana and the app's metrics page.
+  # This is what laptops and CI get, so they never post to the team's Discord.
+  receiver: quiet
   group_by: ['alertname', 'job']
   # Kept short so notifications go out within the 30-second alert target
   group_wait: 5s
   group_interval: 1m
   repeat_interval: 4h
+  routes:
+    # Only the production server pages the team. The label comes from Prometheus's
+    # external_labels (ENVIRONMENT=production, set by the deploy workflow).
+    - matchers: ['environment = production']
+      receiver: devops
 
 receivers:
+  - name: quiet
+
   - name: devops
     # Sends alerts to the team's Discord channel. The webhook URL lives in secrets/discord_webhook_url
     # (committed deliberately, private repo; see .gitignore), mounted into the container.
@@ -14,11 +23,17 @@ receivers:
     discord_configs:
       - webhook_url_file: /etc/alertmanager-secrets/discord_webhook_url
         send_resolved: true
-        title: '{{ if eq .Status "firing" }}🔴 {{ .CommonLabels.alertname }}{{ else }}✅ Resolved: {{ .CommonLabels.alertname }}{{ end }}'
+        title: '{{ if eq .Status "firing" }}🔴 {{ .CommonLabels.alertname }}{{ else }}✅ Resolved: {{ .CommonLabels.alertname }}{{ end }}{{ with .CommonLabels.environment }} ({{ . }}){{ end }}'
+        # Firing: what's wrong and what it means. Resolved: how long it lasted, so a 20-second blip
+        # and a 2-hour outage don't look the same.
         message: |-
           {{ range .Alerts -}}
-          {{ if eq $.Status "resolved" }}Was: {{ end }}**{{ .Annotations.summary }}**{{ if .Labels.severity }} ({{ .Labels.severity }}){{ end }}
+          {{ if eq .Status "resolved" -}}
+          Back to normal after **{{ (.EndsAt.Sub .StartsAt).Round 1000000000 }}** (was: {{ .Annotations.summary }})
+          {{ else -}}
+          **{{ .Annotations.summary }}**{{ if .Labels.severity }} ({{ .Labels.severity }}){{ end }}
           {{ .Annotations.description }}
+          {{ end -}}
           {{ end -}}
 
 inhibit_rules:

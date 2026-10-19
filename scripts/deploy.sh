@@ -23,6 +23,28 @@ HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-60}"
 
 log() { echo "[deploy $(date -u +%H:%M:%S)] $*"; }
 
+# compose.production.yaml requires IMAGE_TAG for every command (logs, exec...), not just `up`;
+# start_stack overrides it per call when rolling back
+export IMAGE_TAG="$NEW_TAG"
+
+# Restarting the backend during a deploy is expected, not an incident, so its alerts are muted
+# while the stack is replaced (brief: > 99% actionable alerts). The trap unmutes on every exit, so
+# if the release (and any rollback) ends up unhealthy, the alerts fire as normal.
+SILENCE_ID=""
+mute_alerts() {
+  SILENCE_ID="$("${COMPOSE[@]}" exec -T alertmanager amtool silence add 'job="backend"' \
+    --duration=15m --author=deploy.sh --comment="deploying $NEW_TAG" \
+    --alertmanager.url=http://localhost:9093 2>/dev/null || true)"
+  if [[ -n "$SILENCE_ID" ]]; then log "backend alerts muted during deploy"; else log "alerts not muted (Alertmanager not running yet)"; fi
+}
+unmute_alerts() {
+  [[ -n "$SILENCE_ID" ]] || return 0
+  "${COMPOSE[@]}" exec -T alertmanager amtool silence expire "$SILENCE_ID" \
+    --alertmanager.url=http://localhost:9093 >/dev/null 2>&1 && log "backend alerts unmuted" || log "WARNING: could not unmute alerts (silence $SILENCE_ID)"
+  SILENCE_ID=""
+}
+trap unmute_alerts EXIT
+
 start_stack() {
   IMAGE_TAG="$1" "${COMPOSE[@]}" up -d --no-build --pull never --remove-orphans
 }
@@ -55,6 +77,7 @@ if [[ -f images.tar.gz ]]; then
 fi
 
 log "deploying $NEW_TAG (previous stable: ${PREVIOUS_TAG:-none})"
+mute_alerts
 start_stack "$NEW_TAG"
 
 if healthy; then

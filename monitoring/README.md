@@ -45,7 +45,9 @@ The alert rules are unit tested in `prometheus/alerts.test.yml`. The `Monitoring
 
 ## Sending alerts to the team
 
-Alerts go to the team's Discord channel, firing and resolved, as messages like "🔴 ServiceDown" and "✅ Resolved: ServiceDown".
+Alerts from the **production server** go to the team's Discord channel, firing and resolved, as messages like "🔴 ServiceDown (production)" and "✅ Resolved: ServiceDown (production)". The resolved message says how long it lasted.
+
+**Only production pages the team.** Prometheus tags every alert with `environment` (from `DEPLOY_ENVIRONMENT`, which the deploy workflow sets to `production`). Alertmanager routes only `environment=production` to Discord; everything else goes to a `quiet` receiver and is visible only in Alertmanager and the dashboards. So running the stack on a laptop, or in CI, never posts to the channel. **Deploys are muted:** `scripts/deploy.sh` silences `job=backend` alerts while it replaces the stack, and lifts the silence when it exits, so a failed deploy still alerts.
 
 **It's already set up.** The webhook URL is committed in `secrets/discord_webhook_url`, so every machine that pulls the repo, including EC2, sends alerts with no extra steps. This was done deliberately because the repo is private. Anyone who can read the repo can post to the channel, so if the repo is ever made public, regenerate the webhook first.
 

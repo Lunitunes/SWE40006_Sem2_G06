@@ -170,7 +170,7 @@ BASE_URL=https://13-239-43-240.sslip.io E2E_ADMIN_PASSWORD=<that server's ADMIN_
 
 Each test creates its own uniquely named event and deletes it afterwards, so running against a live server leaves no test data behind. The in-page camera test only runs on `localhost` or HTTPS, because browsers block the camera elsewhere. Over plain HTTP the suite instead checks the fallback to the phone's camera app. `pnpm test:ui` opens Playwright's interactive runner, and after a failure `pnpm report` shows screenshots and a step-by-step trace.
 
-Measured: 34 tests (17 on each of phone and desktop) in about 15 seconds. Across repeated back-to-back runs with no retries, 262 of 262 passed (160 before the resizing tests were added, 102 after), against the brief's < 1% flake target.
+Measured: 36 tests (18 on each of phone and desktop) in about 15 seconds. Across repeated back-to-back runs with no retries, 262 of 262 passed (160 before the resizing tests were added, 102 after), against the brief's < 1% flake target.
 
 ### Backend tests
 
@@ -219,7 +219,12 @@ Seven alert rules cover:
 
 The in-app dashboard at `/admin/metrics` and the Grafana dashboard both show this data.
 
-Firing and resolved alerts are posted to the team's Discord channel. In testing, a `ServiceDown` alert arrived 17.9 s after the backend stopped (brief target: 30 s).
+Firing and resolved alerts from the **production server** are posted to the team's Discord channel, e.g. "🔴 ServiceDown (production)", then "✅ Resolved: ServiceDown (production): back to normal after 2m15s". In testing, a `ServiceDown` alert arrived 17.9 s after the backend stopped (brief target: 30 s).
+
+To keep alerts actionable (brief: > 99%), two kinds of noise are filtered out:
+
+- **Other stacks stay quiet.** Every alert is tagged with the stack it came from (`environment`). Only `production`, set by the deploy workflow, goes to Discord; laptops and CI default to `local`, and their alerts only show in Alertmanager and the dashboards.
+- **Deploys don't page anyone.** `scripts/deploy.sh` mutes backend alerts while it replaces the stack and unmutes them when it finishes. If the release (or its rollback) is still unhealthy at that point, the alerts fire as normal.
 
 See [monitoring/README.md](monitoring/README.md) for how each success metric in the project brief is met, and how to change or test the Discord webhook.
 

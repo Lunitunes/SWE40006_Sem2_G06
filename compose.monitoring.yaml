@@ -8,6 +8,12 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
       - --web.enable-lifecycle
+      # Lets prometheus.yml use ${ENVIRONMENT} in external_labels
+      - --enable-feature=expand-external-labels
+    environment:
+      # Tags every alert with the stack it came from. Only "production" (set by the deploy
+      # workflow) posts to Discord; laptops and CI default to "local" and stay quiet.
+      ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-local}
     volumes:
       - ./monitoring/prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus

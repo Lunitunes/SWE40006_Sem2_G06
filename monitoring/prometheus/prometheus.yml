@@ -4,6 +4,11 @@ global:
   # Short timeout so a hung backend is marked down quickly (feeds the 30s alert target)
   scrape_timeout: 5s
   evaluation_interval: 15s
+  # Which stack the alerts come from (needs --enable-feature=expand-external-labels). Alertmanager
+  # only posts "production" alerts to Discord, so laptops and CI never page the team.
+  # Unset = label dropped = treated as not production.
+  external_labels:
+    environment: ${ENVIRONMENT}
 
 rule_files:
   - /etc/prometheus/alerts.yml
