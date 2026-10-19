@@ -46,7 +46,7 @@ unmute_alerts() {
 trap unmute_alerts EXIT
 
 start_stack() {
-  IMAGE_TAG="$1" "${COMPOSE[@]}" up -d --no-build --pull never --remove-orphans
+  IMAGE_TAG="$1" "${COMPOSE[@]}" up -d --no-build --pull missing --remove-orphans
 }
 
 healthy() {
