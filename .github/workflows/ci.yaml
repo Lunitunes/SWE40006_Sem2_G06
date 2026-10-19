@@ -1,0 +1,33 @@
+
+name: CI
+
+on:
+  workflow_call:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    # Existing backend CI steps and PostgreSQL service
+
+  frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    # Existing frontend lint and build steps
+
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    # Existing Playwright and Docker Compose steps
+
+  monitoring:
+    name: Monitoring Validation
+    runs-on: ubuntu-latest
+    # Existing monitoring validation steps
