@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <main className={styles.page}>
       <div className={styles.container}>
-        <h1 className={styles.title}>Photo Repo</h1>
+        <h1 className={styles.title}>Photo Repo Live</h1>
         <p className={styles.lead}>Collect everyone’s photos from your event in one place.</p>
 
         <section className={styles.card} aria-labelledby="guest-heading">
